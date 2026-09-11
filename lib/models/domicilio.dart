@@ -6,6 +6,8 @@ class Domicilio {
   final String bairro;
   final String? complemento;
   final bool ativo;
+  final double? posX; // posição no mapa (0.0 a 1.0), null = ainda não posicionado
+  final double? posY;
 
   Domicilio({
     required this.id,
@@ -15,6 +17,8 @@ class Domicilio {
     required this.bairro,
     this.complemento,
     this.ativo = true,
+    this.posX,
+    this.posY,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +30,8 @@ class Domicilio {
       'bairro': bairro,
       'complemento': complemento,
       'ativo': ativo ? 1 : 0,
+      'pos_x': posX,
+      'pos_y': posY,
     };
   }
 
@@ -38,6 +44,8 @@ class Domicilio {
       bairro: map['bairro'],
       complemento: map['complemento'],
       ativo: map['ativo'] == 1,
+      posX: map['pos_x'] as double?,
+      posY: map['pos_y'] as double?,
     );
   }
 }

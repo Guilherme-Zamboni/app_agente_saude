@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/domicilio.dart';
 import '../database/domicilio_dao.dart';
 import 'tela_cadastro_familia.dart';
+import 'tela_selecionar_local_mapa.dart';
 
 class TelaCadastroDomicilio extends StatefulWidget {
   final String territorioId;
@@ -42,7 +43,7 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     }
   }
 
-  Future<void> _salvar() async {
+   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _salvando = true);
@@ -57,6 +58,8 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
         complemento: _complementoController.text.trim().isEmpty
             ? null
             : _complementoController.text.trim(),
+        posX: widget.domicilioParaEditar!.posX,
+        posY: widget.domicilioParaEditar!.posY,
       );
       await _domicilioDao.atualizar(domicilioAtualizado);
 
@@ -78,6 +81,18 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     );
 
     await _domicilioDao.inserir(domicilio);
+
+    if (!mounted) return;
+
+    // Pede para o agente indicar onde fica a casa no mapa antes de seguir
+    final posicao = await Navigator.push<Offset>(
+      context,
+      MaterialPageRoute(builder: (_) => const TelaSelecionarLocalMapa()),
+    );
+
+    if (posicao != null) {
+      await _domicilioDao.atualizarPosicao(domicilio.id, posicao.dx, posicao.dy);
+    }
 
     if (!mounted) return;
     setState(() => _salvando = false);

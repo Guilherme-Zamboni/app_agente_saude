@@ -1,0 +1,79 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="1200" height="1200" fill="#F2EFEA"/>
+
+  <!-- Rio (fora do grupo rotacionado, corre pela borda) -->
+  <path d="M 1050 -20 C 1000 150, 1120 300, 1080 500 C 1050 650, 1150 800, 1100 1000 L 1200 1000 L 1200 -20 Z"
+        fill="#AEDAEB"/>
+
+  <g transform="rotate(-18 600 650)">
+    <!-- Quadras (prédios) ao longo da avenida vertical esquerda -->
+    <rect x="-60" y="-150" width="220" height="220" rx="18" fill="#C9CDD1" stroke="#AEB3B8" stroke-width="3"/>
+    <rect x="-60" y="110" width="220" height="260" rx="18" fill="#C9CDD1" stroke="#AEB3B8" stroke-width="3"/>
+    <rect x="-60" y="410" width="220" height="260" rx="18" fill="#C9CDD1" stroke="#AEB3B8" stroke-width="3"/>
+    <rect x="-60" y="710" width="220" height="260" rx="18" fill="#C9CDD1" stroke="#AEB3B8" stroke-width="3"/>
+    <rect x="-60" y="1010" width="220" height="260" rx="18" fill="#C9CDD1" stroke="#AEB3B8" stroke-width="3"/>
+
+    <!-- Faixa verde entre as quadras e a avenida -->
+    <rect x="175" y="-200" width="26" height="1600" rx="13" fill="#BFDCAE"/>
+
+    <!-- Avenida vertical principal (casing branco + preenchimento) -->
+    <rect x="255" y="-200" width="96" height="1600" rx="30" fill="#FFFFFF"/>
+    <rect x="265" y="-200" width="76" height="1600" rx="24" fill="#D8DADD"/>
+    <text font-family="sans-serif" font-size="30" font-weight="700" fill="#1B2A41"
+          transform="rotate(-90 303 500)" x="303" y="500" text-anchor="middle">R. DAS ORQUÍDEAS</text>
+
+    <!-- Praça com árvores -->
+    <rect x="470" y="120" width="230" height="150" rx="20" fill="#B9DEC0"/>
+    <rect x="720" y="120" width="230" height="150" rx="20" fill="#7FB88B"/>
+    <g fill="#5B9C67">
+      <circle cx="770" cy="160" r="22"/>
+      <circle cx="830" cy="150" r="26"/>
+      <circle cx="890" cy="170" r="20"/>
+      <circle cx="800" cy="210" r="21"/>
+      <circle cx="870" cy="220" r="19"/>
+    </g>
+
+    <!-- Avenidas horizontais empilhadas (pílulas) -->
+    <rect x="420" y="410" width="560" height="80" rx="40" fill="#FFFFFF"/>
+    <rect x="432" y="422" width="536" height="56" rx="28" fill="#C7E4C2"/>
+    <rect x="600" y="418" width="240" height="44" rx="22" fill="#FFFFFF"/>
+    <text x="720" y="447" font-family="sans-serif" font-size="26" font-weight="700" fill="#1B2A41" text-anchor="middle">AV. BELA VISTA</text>
+
+    <rect x="470" y="560" width="620" height="80" rx="40" fill="#FFFFFF"/>
+    <rect x="482" y="572" width="596" height="56" rx="28" fill="#DADCDF"/>
+    <rect x="660" y="568" width="280" height="44" rx="22" fill="#FFFFFF"/>
+    <text x="800" y="597" font-family="sans-serif" font-size="26" font-weight="700" fill="#1B2A41" text-anchor="middle">R. DOS IPÊS</text>
+
+    <rect x="420" y="710" width="600" height="80" rx="40" fill="#FFFFFF"/>
+    <rect x="432" y="722" width="576" height="56" rx="28" fill="#C7E4C2"/>
+    <rect x="610" y="718" width="250" height="44" rx="22" fill="#FFFFFF"/>
+    <text x="735" y="747" font-family="sans-serif" font-size="26" font-weight="700" fill="#1B2A41" text-anchor="middle">AV. HORIZONTE</text>
+
+    <rect x="470" y="860" width="560" height="80" rx="40" fill="#FFFFFF"/>
+    <rect x="482" y="872" width="536" height="56" rx="28" fill="#DADCDF"/>
+    <rect x="650" y="868" width="290" height="44" rx="22" fill="#FFFFFF"/>
+    <text x="795" y="897" font-family="sans-serif" font-size="24" font-weight="700" fill="#1B2A41" text-anchor="middle">R. SANTA CLARA</text>
+
+    <!-- Rua vertical direita -->
+    <rect x="985" y="-200" width="70" height="1600" rx="25" fill="#FFFFFF"/>
+    <rect x="993" y="-200" width="54" height="1600" rx="20" fill="#DADCDF"/>
+    <text font-family="sans-serif" font-size="24" font-weight="700" fill="#1B2A41"
+          transform="rotate(-90 1020 950)" x="1020" y="950" text-anchor="middle">R. ALECRIM</text>
+  </g>
+
+  <!-- Texto do local (não rotacionado, para ficar legível) -->
+  <text x="600" y="70" font-family="sans-serif" font-size="34" font-weight="700" fill="#1B2A41" text-anchor="middle">RESIDENCIAL</text>
+  <text x="600" y="112" font-family="sans-serif" font-size="34" font-weight="700" fill="#1B2A41" text-anchor="middle">NOVO HORIZONTE</text>
+
+  <!-- Pino de localização -->
+  <g transform="translate(600,230)">
+    <path d="M0 -60 C 33 -60 58 -35 58 -2 C 58 40 0 90 0 90 C 0 90 -58 40 -58 -2 C -58 -35 -33 -60 0 -60 Z" fill="#1B2A41"/>
+    <circle cx="0" cy="-2" r="20" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Ícone pequeno (comércio) -->
+  <g transform="translate(70,1080)">
+    <polygon points="0,-18 16,10 -16,10" fill="#D64545"/>
+  </g>
+  <text x="95" y="1088" font-family="sans-serif" font-size="18" fill="#5A5A5A">Comércio</text>
+</svg>

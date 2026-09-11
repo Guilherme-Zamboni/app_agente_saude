@@ -26,9 +26,6 @@ class DatabaseHelper {
     );
   }
 
-  // ... o restante do arquivo (_onCreate com todas as tabelas e índices)
-  // continua exatamente igual, não precisa mudar nada abaixo daqui.
-
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE territorio (
@@ -47,6 +44,8 @@ class DatabaseHelper {
         bairro TEXT NOT NULL,
         complemento TEXT,
         ativo INTEGER NOT NULL DEFAULT 1,
+        pos_x REAL,
+        pos_y REAL,
         FOREIGN KEY (territorio_id) REFERENCES territorio (id)
       )
     ''');
@@ -79,9 +78,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // familia_id sempre preenchido (toda visita pertence a uma família/domicílio).
-    // morador_id só é preenchido quando for um acompanhamento extra individual;
-    // nulo significa visita geral, cobrindo a família inteira.
     await db.execute('''
       CREATE TABLE visita (
         id TEXT PRIMARY KEY,

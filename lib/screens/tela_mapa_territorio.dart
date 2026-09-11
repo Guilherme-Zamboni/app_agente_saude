@@ -5,6 +5,7 @@ import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
 import 'tela_estatisticas.dart';
+import 'tela_selecionar_local_mapa.dart';
 
 class TelaMapaTerritorio extends StatefulWidget {
   final String territorioId;
@@ -18,13 +19,15 @@ class TelaMapaTerritorio extends StatefulWidget {
 
   @override
   State<TelaMapaTerritorio> createState() => _TelaMapaTerritorioState();
-
-  
 }
 
 class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   final _domicilioDao = DomicilioDao();
   late Future<List<Domicilio>> _domiciliosFuture;
+  final _controladorZoom = TransformationController();
+
+  static const double _larguraMapa = 1200;
+  static const double _alturaMapa = 1200;
 
   @override
   void initState() {
@@ -32,8 +35,23 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     _carregar();
   }
 
+  @override
+  void dispose() {
+    _controladorZoom.dispose();
+    super.dispose();
+  }
+
   void _carregar() {
     _domiciliosFuture = _domicilioDao.listarPorTerritorio(widget.territorioId);
+  }
+
+  // Multiplica a escala EM CIMA da matriz atual, preservando a posição
+  // de arraste já feita pelo usuário (evita o salto/deslocamento).
+  void _ajustarZoom(double fator) {
+    final matrizAtual = _controladorZoom.value.clone();
+    setState(() {
+      _controladorZoom.value = matrizAtual..scale(fator, fator, 1.0);
+    });
   }
 
   Future<void> _abrirNovoDomicilio() async {
@@ -46,7 +64,15 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     setState(_carregar);
   }
 
-    Future<void> _abrirEdicao(Domicilio domicilio) async {
+  Future<void> _abrirDetalhe(Domicilio domicilio) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => TelaDetalheDomicilio(domicilio: domicilio)),
+    );
+    setState(_carregar);
+  }
+
+  Future<void> _abrirEdicao(Domicilio domicilio) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -59,14 +85,20 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     setState(_carregar);
   }
 
-  Future<void> _abrirDetalhe(Domicilio domicilio) async {
-    await Navigator.push(
+  Future<void> _moverNoMapa(Domicilio domicilio) async {
+    final posicao = await Navigator.push<Offset>(
       context,
       MaterialPageRoute(
-        builder: (_) => TelaDetalheDomicilio(domicilio: domicilio),
+        builder: (_) => TelaSelecionarLocalMapa(
+          posXInicial: domicilio.posX,
+          posYInicial: domicilio.posY,
+        ),
       ),
     );
-    setState(_carregar);
+    if (posicao != null) {
+      await _domicilioDao.atualizarPosicao(domicilio.id, posicao.dx, posicao.dy);
+      setState(_carregar);
+    }
   }
 
   Future<void> _confirmarExclusao(Domicilio domicilio) async {
@@ -90,17 +122,71 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         ],
       ),
     );
-
     if (confirmar == true) {
       await _domicilioDao.inativar(domicilio.id);
       setState(_carregar);
     }
   }
 
+  void _abrirMenuCasa(Domicilio d) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('${d.rua}, ${d.numero}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              subtitle: Text(d.bairro),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Ver famílias e moradores'),
+              onTap: () {
+                Navigator.pop(context);
+                _abrirDetalhe(d);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Editar endereço'),
+              onTap: () {
+                Navigator.pop(context);
+                _abrirEdicao(d);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.pin_drop_outlined),
+              title: const Text('Mover posição no mapa'),
+              onTap: () {
+                Navigator.pop(context);
+                _moverNoMapa(d);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: const Text('Excluir domicílio', style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmarExclusao(d);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-            appBar: AppBar(
+      appBar: AppBar(
         title: Text(widget.nomeTerritorio),
         actions: [
           IconButton(
@@ -139,6 +225,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
 
           final domicilios = snapshot.data!;
 
+          for (final d in domicilios) {
+            debugPrint('DOMICILIO: ${d.rua} ${d.numero} | posX=${d.posX} | posY=${d.posY}');
+          }
+
           if (domicilios.isEmpty) {
             return Center(
               child: Padding(
@@ -165,101 +255,83 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             );
           }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.1,
-            ),
-            itemCount: domicilios.length,
-            itemBuilder: (context, index) {
-              final d = domicilios[index];
-                            return _CartaoDomicilio(
-                domicilio: d,
-                onTap: () => _abrirDetalhe(d),
-                onEditar: () => _abrirEdicao(d),
-                onExcluir: () => _confirmarExclusao(d),
-              );
-            },
+          return Stack(
+            children: [
+              InteractiveViewer(
+                transformationController: _controladorZoom,
+                minScale: 0.5,
+                maxScale: 3,
+                constrained: false,
+                boundaryMargin: const EdgeInsets.all(80),
+                child: SizedBox(
+                  width: _larguraMapa,
+                  height: _alturaMapa,
+                  child: Stack(
+                    children: [
+                      Image.asset(
+                        'assets/maps/territorio_teste.jpg',
+                        width: _larguraMapa,
+                        height: _alturaMapa,
+                        fit: BoxFit.cover,
+                      ),
+                      for (final d in domicilios)
+                        if (d.posX != null && d.posY != null)
+                          Positioned(
+                            left: d.posX! * _larguraMapa - 22,
+                            top: d.posY! * _alturaMapa - 44,
+                            child: GestureDetector(
+                              onTap: () => _abrirMenuCasa(d),
+                              child: Column(
+                                children: [
+                                  const Icon(Icons.location_on,
+                                      color: Colors.teal, size: 40),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                      boxShadow: const [
+                                        BoxShadow(color: Colors.black26, blurRadius: 2),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      d.numero,
+                                      style: const TextStyle(
+                                          fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                bottom: 16,
+                child: Column(
+                  children: [
+                    FloatingActionButton.small(
+                      heroTag: 'zoomIn',
+                      backgroundColor: Colors.white,
+                      onPressed: () => _ajustarZoom(1.2),
+                      child: const Icon(Icons.add, color: Colors.teal),
+                    ),
+                    const SizedBox(height: 8),
+                    FloatingActionButton.small(
+                      heroTag: 'zoomOut',
+                      backgroundColor: Colors.white,
+                      onPressed: () => _ajustarZoom(1 / 1.2),
+                      child: const Icon(Icons.remove, color: Colors.teal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _CartaoDomicilio extends StatelessWidget {
-  final Domicilio domicilio;
-  final VoidCallback onTap;
-  final VoidCallback onEditar;
-  final VoidCallback onExcluir;
-
-  const _CartaoDomicilio({
-    required this.domicilio,
-    required this.onTap,
-    required this.onEditar,
-    required this.onExcluir,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Stack(
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.home, size: 40, color: Colors.teal),
-                  const SizedBox(height: 12),
-                  Text(
-                    '${domicilio.rua}, ${domicilio.numero}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    domicilio.bairro,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 14, color: Colors.black54),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 4,
-            left: 4,
-            child: InkWell(
-              onTap: onEditar,
-              borderRadius: BorderRadius.circular(16),
-              child: const Padding(
-                padding: EdgeInsets.all(6),
-                child: Icon(Icons.edit_outlined, size: 20, color: Colors.black45),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 4,
-            right: 4,
-            child: InkWell(
-              onTap: onExcluir,
-              borderRadius: BorderRadius.circular(16),
-              child: const Padding(
-                padding: EdgeInsets.all(6),
-                child: Icon(Icons.delete_outline, size: 20, color: Colors.black45),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

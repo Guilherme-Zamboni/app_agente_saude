@@ -25,6 +25,17 @@ class DomicilioDao {
     );
   }
 
+    // Salva a posição do pino no mapa (coordenadas relativas, 0.0 a 1.0)
+  Future<void> atualizarPosicao(String id, double posX, double posY) async {
+    final db = await dbHelper.database;
+    await db.update(
+      'domicilio',
+      {'pos_x': posX, 'pos_y': posY},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // Inativação em cascata: domicílio -> famílias -> moradores
   Future<void> inativar(String id) async {
     final db = await dbHelper.database;

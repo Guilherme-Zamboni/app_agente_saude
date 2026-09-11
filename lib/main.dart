@@ -17,10 +17,10 @@ class MeuApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'App Agente de Saúde',
       theme: ThemeData(
         primarySwatch: Colors.teal,
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF2F7F5),
         textTheme: const TextTheme(
           bodyLarge: TextStyle(fontSize: 18),
         ),
