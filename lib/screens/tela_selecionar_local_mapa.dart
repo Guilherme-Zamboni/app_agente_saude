@@ -13,6 +13,10 @@ class TelaSelecionarLocalMapa extends StatefulWidget {
 class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   final _controladorZoom = TransformationController();
   final _chaveMapa = GlobalKey();
+  double _escalaAtual = 1.0;
+
+  // TROQUE pelos números reais da sua imagem (largura / altura)
+  static const double _proporcaoMapa = 1024 / 764;
 
   Offset? _posicaoSelecionada; // proporção 0.0 a 1.0
 
@@ -22,6 +26,12 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
     if (widget.posXInicial != null && widget.posYInicial != null) {
       _posicaoSelecionada = Offset(widget.posXInicial!, widget.posYInicial!);
     }
+    _controladorZoom.addListener(() {
+      final escala = _controladorZoom.value.getMaxScaleOnAxis();
+      if (escala != _escalaAtual) {
+        setState(() => _escalaAtual = escala);
+      }
+    });
   }
 
   @override
@@ -46,17 +56,10 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
         (local.dy / box.size.height).clamp(0.0, 1.0),
       );
     });
-    debugPrint('>>> TOQUE: resultado=$_posicaoSelecionada');
   }
 
   void _confirmar() {
-    if (_posicaoSelecionada == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Toque no mapa para indicar o local da casa')),
-      );
-      return;
-    }
-    debugPrint('>>> CONFIRMAR: devolvendo $_posicaoSelecionada');
+    if (_posicaoSelecionada == null) return;
     Navigator.pop(context, _posicaoSelecionada);
   }
 
@@ -90,28 +93,45 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
             transformationController: _controladorZoom,
             minScale: 1,
             maxScale: 4,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: _aoTocarNoMapa,
-              child: SizedBox.expand(
-                key: _chaveMapa,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.asset(
-                      'assets/maps/territorio_teste.jpg',
-                      fit: BoxFit.contain,
-                    ),
-                    if (_posicaoSelecionada != null)
-                      Align(
-                        alignment: Alignment(
-                          _posicaoSelecionada!.dx * 2 - 1,
-                          _posicaoSelecionada!.dy * 2 - 1,
-                        ),
-                        child: const Icon(Icons.location_on,
-                            color: Colors.red, size: 44),
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: _proporcaoMapa,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final largura = constraints.maxWidth;
+                    final altura = constraints.maxHeight;
+
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: _aoTocarNoMapa,
+                      child: Stack(
+                        key: _chaveMapa,
+                        clipBehavior: Clip.none,
+                        children: [
+                          Image.asset(
+                            'assets/maps/territorio_teste.jpg',
+                            width: largura,
+                            height: altura,
+                            fit: BoxFit.fill,
+                          ),
+                          if (_posicaoSelecionada != null)
+                            Positioned(
+                              left: _posicaoSelecionada!.dx * largura,
+                              top: _posicaoSelecionada!.dy * altura,
+                              child: FractionalTranslation(
+                                translation: const Offset(-0.5, -1.0),
+                                child: Transform.scale(
+                                  scale: 1 / _escalaAtual,
+                                  alignment: Alignment.bottomCenter,
+                                  child: const Icon(Icons.location_on,
+                                      color: Colors.red, size: 36),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ),

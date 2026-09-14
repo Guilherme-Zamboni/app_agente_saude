@@ -25,14 +25,21 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   final _domicilioDao = DomicilioDao();
   late Future<List<Domicilio>> _domiciliosFuture;
   final _controladorZoom = TransformationController();
+  double _escalaAtual = 1.0;
 
-  static const double _larguraMapa = 1200;
-  static const double _alturaMapa = 1200;
+  // TROQUE pelos números reais da sua imagem (largura / altura)
+  static const double _proporcaoMapa = 1074 / 764;
 
   @override
   void initState() {
     super.initState();
     _carregar();
+    _controladorZoom.addListener(() {
+      final escala = _controladorZoom.value.getMaxScaleOnAxis();
+      if (escala != _escalaAtual) {
+        setState(() => _escalaAtual = escala);
+      }
+    });
   }
 
   @override
@@ -45,8 +52,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     _domiciliosFuture = _domicilioDao.listarPorTerritorio(widget.territorioId);
   }
 
-  // Multiplica a escala EM CIMA da matriz atual, preservando a posição
-  // de arraste já feita pelo usuário (evita o salto/deslocamento).
   void _ajustarZoom(double fator) {
     final matrizAtual = _controladorZoom.value.clone();
     setState(() {
@@ -170,7 +175,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Excluir domicílio', style: TextStyle(color: Colors.redAccent)),
+              title: const Text('Excluir domicílio',
+                  style: TextStyle(color: Colors.redAccent)),
               onTap: () {
                 Navigator.pop(context);
                 _confirmarExclusao(d);
@@ -225,10 +231,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
 
           final domicilios = snapshot.data!;
 
-          for (final d in domicilios) {
-            debugPrint('DOMICILIO: ${d.rua} ${d.numero} | posX=${d.posX} | posY=${d.posY}');
-          }
-
           if (domicilios.isEmpty) {
             return Center(
               child: Padding(
@@ -259,52 +261,72 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             children: [
               InteractiveViewer(
                 transformationController: _controladorZoom,
-                minScale: 0.5,
-                maxScale: 3,
-                constrained: false,
-                boundaryMargin: const EdgeInsets.all(80),
-                child: SizedBox(
-                  width: _larguraMapa,
-                  height: _alturaMapa,
-                  child: Stack(
-                    children: [
-                      Image.asset(
-                        'assets/maps/territorio_teste.jpg',
-                        width: _larguraMapa,
-                        height: _alturaMapa,
-                        fit: BoxFit.contain,
-                      ),
-                      for (final d in domicilios)
-                        if (d.posX != null && d.posY != null)
-                          Positioned(
-                            left: d.posX! * _larguraMapa - 22,
-                            top: d.posY! * _alturaMapa - 44,
-                            child: GestureDetector(
-                              onTap: () => _abrirMenuCasa(d),
-                              child: Column(
-                                children: [
-                                  const Icon(Icons.location_on,
-                                      color: Colors.teal, size: 40),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4),
-                                      boxShadow: const [
-                                        BoxShadow(color: Colors.black26, blurRadius: 2),
-                                      ],
-                                    ),
-                                    child: Text(
-                                      d.numero,
-                                      style: const TextStyle(
-                                          fontSize: 10, fontWeight: FontWeight.bold),
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: _proporcaoMapa,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final largura = constraints.maxWidth;
+                        final altura = constraints.maxHeight;
+
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Image.asset(
+                              'assets/maps/territorio_teste.jpg',
+                              width: largura,
+                              height: altura,
+                              fit: BoxFit.fill,
+                            ),
+                            for (final d in domicilios)
+                              if (d.posX != null && d.posY != null)
+                                Positioned(
+                                  left: d.posX! * largura,
+                                  top: d.posY! * altura,
+                                  child: FractionalTranslation(
+                                    translation: const Offset(-0.5, -1.0),
+                                    child: Transform.scale(
+                                      scale: 1 / _escalaAtual,
+                                      alignment: Alignment.bottomCenter,
+                                      child: GestureDetector(
+                                        onTap: () => _abrirMenuCasa(d),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.location_on,
+                                                color: Colors.teal, size: 36),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 4, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                      color: Colors.black26,
+                                                      blurRadius: 2),
+                                                ],
+                                              ),
+                                              child: Text(
+                                                d.numero,
+                                                style: const TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                    ],
+                                ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
