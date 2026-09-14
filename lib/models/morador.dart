@@ -44,6 +44,8 @@ class Morador {
     };
   }
 
+  
+
   factory Morador.fromMap(Map<String, dynamic> map) {
     return Morador(
       id: map['id'],

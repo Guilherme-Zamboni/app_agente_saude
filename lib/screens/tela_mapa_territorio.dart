@@ -2,14 +2,37 @@ import 'package:flutter/material.dart';
 import '../models/domicilio.dart';
 import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
+import '../database/morador_dao.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
 import 'tela_estatisticas.dart';
 import 'tela_selecionar_local_mapa.dart';
 
-// Quantos dias sem visita para o domicílio voltar a contar como "pendente"
 const int diasLimiteVisita = 30;
+
+// Opções do filtro de pinos
+enum FiltroMapa {
+  todos,
+  pendentes,
+  visitados,
+  gestante,
+  crianca,
+  idoso,
+  hipertensao,
+  diabetes,
+}
+
+const Map<FiltroMapa, String> rotulosFiltro = {
+  FiltroMapa.todos: 'Todos',
+  FiltroMapa.pendentes: 'Pendentes de visita',
+  FiltroMapa.visitados: 'Visitados (30 dias)',
+  FiltroMapa.gestante: 'Com gestante',
+  FiltroMapa.crianca: 'Com criança (0-4)',
+  FiltroMapa.idoso: 'Com idoso (60+)',
+  FiltroMapa.hipertensao: 'Com hipertensão',
+  FiltroMapa.diabetes: 'Com diabetes',
+};
 
 class TelaMapaTerritorio extends StatefulWidget {
   final String territorioId;
@@ -28,16 +51,19 @@ class TelaMapaTerritorio extends StatefulWidget {
 class _DadosMapa {
   final List<Domicilio> domicilios;
   final Map<String, DateTime> ultimasVisitas;
+  final Map<String, Set<String>> marcadores;
 
-  _DadosMapa(this.domicilios, this.ultimasVisitas);
+  _DadosMapa(this.domicilios, this.ultimasVisitas, this.marcadores);
 }
 
 class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   final _domicilioDao = DomicilioDao();
   final _visitaDao = VisitaDao();
+  final _moradorDao = MoradorDao();
   late Future<_DadosMapa> _dadosFuture;
   final _controladorZoom = TransformationController();
   double _escalaAtual = 1.0;
+  FiltroMapa _filtroAtual = FiltroMapa.todos;
 
   // TROQUE pelos números reais da sua imagem (largura / altura)
   static const double _proporcaoMapa = 1200 / 900;
@@ -69,7 +95,38 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         await _domicilioDao.listarPorTerritorio(widget.territorioId);
     final visitas =
         await _visitaDao.ultimasVisitasPorTerritorio(widget.territorioId);
-    return _DadosMapa(domicilios, visitas);
+    final marcadores =
+        await _moradorDao.marcadoresPorDomicilio(widget.territorioId);
+    return _DadosMapa(domicilios, visitas, marcadores);
+  }
+
+  bool _estaEmDia(DateTime? ultimaVisita) {
+    if (ultimaVisita == null) return false;
+    return DateTime.now().difference(ultimaVisita).inDays <= diasLimiteVisita;
+  }
+
+  bool _passaNoFiltro(Domicilio d, _DadosMapa dados) {
+    final emDia = _estaEmDia(dados.ultimasVisitas[d.id]);
+    final marcadores = dados.marcadores[d.id] ?? <String>{};
+
+    switch (_filtroAtual) {
+      case FiltroMapa.todos:
+        return true;
+      case FiltroMapa.pendentes:
+        return !emDia;
+      case FiltroMapa.visitados:
+        return emDia;
+      case FiltroMapa.gestante:
+        return marcadores.contains('gestante');
+      case FiltroMapa.crianca:
+        return marcadores.contains('crianca');
+      case FiltroMapa.idoso:
+        return marcadores.contains('idoso');
+      case FiltroMapa.hipertensao:
+        return marcadores.contains('hipertensao');
+      case FiltroMapa.diabetes:
+        return marcadores.contains('diabetes');
+    }
   }
 
   void _ajustarZoom(double fator) {
@@ -90,6 +147,62 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
       ..translate(-centro.dx, -centro.dy);
 
     setState(() => _controladorZoom.value = matriz);
+  }
+
+  void _resetarZoom() {
+    setState(() => _controladorZoom.value = Matrix4.identity());
+  }
+
+  void _abrirFiltro() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Filtrar domicílios',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final filtro in FiltroMapa.values)
+                      ListTile(
+                        leading: Icon(
+                          _filtroAtual == filtro
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          color: _filtroAtual == filtro
+                              ? Colors.teal
+                              : Colors.black38,
+                        ),
+                        title: Text(rotulosFiltro[filtro]!),
+                        onTap: () {
+                          setState(() => _filtroAtual = filtro);
+                          Navigator.pop(context);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _abrirNovoDomicilio() async {
@@ -179,10 +292,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   }
 
   void _abrirMenuCasa(Domicilio d, DateTime? ultimaVisita) {
-    final dias = ultimaVisita == null
-        ? null
-        : DateTime.now().difference(ultimaVisita).inDays;
-    final emDia = dias != null && dias <= diasLimiteVisita;
+    final emDia = _estaEmDia(ultimaVisita);
 
     showModalBottomSheet(
       context: context,
@@ -271,6 +381,13 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         title: Text(widget.nomeTerritorio),
         actions: [
           IconButton(
+            icon: Icon(_filtroAtual == FiltroMapa.todos
+                ? Icons.filter_alt_outlined
+                : Icons.filter_alt),
+            tooltip: 'Filtrar',
+            onPressed: _abrirFiltro,
+          ),
+          IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Estatísticas',
             onPressed: () {
@@ -304,10 +421,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final domicilios = snapshot.data!.domicilios;
-          final ultimasVisitas = snapshot.data!.ultimasVisitas;
+          final dados = snapshot.data!;
+          final todos = dados.domicilios;
 
-          if (domicilios.isEmpty) {
+          if (todos.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -333,100 +450,148 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             );
           }
 
-          return Stack(
-            children: [
-              InteractiveViewer(
-                transformationController: _controladorZoom,
-                minScale: 1,
-                maxScale: 4,
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: _proporcaoMapa,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final largura = constraints.maxWidth;
-                        final altura = constraints.maxHeight;
+          final visiveis = todos.where((d) => _passaNoFiltro(d, dados)).toList();
+          final pendentes =
+              todos.where((d) => !_estaEmDia(dados.ultimasVisitas[d.id])).length;
 
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Image.asset(
-                              'assets/maps/territorio_teste.jpg',
-                              width: largura,
-                              height: altura,
-                              fit: BoxFit.fill,
-                            ),
-                            for (final d in domicilios)
-                              if (d.posX != null && d.posY != null)
-                                _construirPino(
-                                  d,
-                                  ultimasVisitas[d.id],
-                                  largura,
-                                  altura,
-                                ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              // Legenda das cores
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black26, blurRadius: 3),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.location_on, color: Colors.green, size: 18),
-                          SizedBox(width: 4),
-                          Text('Visitado', style: TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.location_on,
-                              color: Color(0xFF546E7A), size: 18),
-                          SizedBox(width: 4),
-                          Text('Pendente', style: TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 16,
-                bottom: 16,
-                child: Column(
+          return Column(
+            children: [
+              // Contador no topo
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: Colors.teal.withValues(alpha: 0.08),
+                child: Row(
                   children: [
-                    FloatingActionButton.small(
-                      heroTag: 'zoomIn',
-                      backgroundColor: Colors.white,
-                      onPressed: () => _ajustarZoom(1.2),
-                      child: const Icon(Icons.add, color: Colors.teal),
+                    const Icon(Icons.home_work_outlined,
+                        size: 20, color: Colors.teal),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _filtroAtual == FiltroMapa.todos
+                            ? '${todos.length} domicílios • $pendentes pendente(s) de visita'
+                            : '${visiveis.length} de ${todos.length} • ${rotulosFiltro[_filtroAtual]}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    FloatingActionButton.small(
-                      heroTag: 'zoomOut',
-                      backgroundColor: Colors.white,
-                      onPressed: () => _ajustarZoom(1 / 1.2),
-                      child: const Icon(Icons.remove, color: Colors.teal),
+                    if (_filtroAtual != FiltroMapa.todos)
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _filtroAtual = FiltroMapa.todos),
+                        child: const Text('Limpar'),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    InteractiveViewer(
+                      transformationController: _controladorZoom,
+                      minScale: 1,
+                      maxScale: 4,
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: _proporcaoMapa,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final largura = constraints.maxWidth;
+                              final altura = constraints.maxHeight;
+
+                              return Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Image.asset(
+                                    'assets/maps/territorio_teste.jpg',
+                                    width: largura,
+                                    height: altura,
+                                    fit: BoxFit.fill,
+                                  ),
+                                  for (final d in visiveis)
+                                    if (d.posX != null && d.posY != null)
+                                      _construirPino(
+                                        d,
+                                        dados.ultimasVisitas[d.id],
+                                        largura,
+                                        altura,
+                                      ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Legenda
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 3),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.location_on,
+                                    color: Colors.green, size: 18),
+                                SizedBox(width: 4),
+                                Text('Visitado', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.location_on,
+                                    color: Color(0xFF546E7A), size: 18),
+                                SizedBox(width: 4),
+                                Text('Pendente', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Botões de centralizar e zoom
+                    Positioned(
+                      left: 16,
+                      bottom: 16,
+                      child: Column(
+                        children: [
+                          FloatingActionButton.small(
+                            heroTag: 'centralizar',
+                            backgroundColor: Colors.white,
+                            onPressed: _resetarZoom,
+                            child: const Icon(Icons.center_focus_strong,
+                                color: Colors.teal),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
+                            heroTag: 'zoomIn',
+                            backgroundColor: Colors.white,
+                            onPressed: () => _ajustarZoom(1.2),
+                            child: const Icon(Icons.add, color: Colors.teal),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
+                            heroTag: 'zoomOut',
+                            backgroundColor: Colors.white,
+                            onPressed: () => _ajustarZoom(1 / 1.2),
+                            child: const Icon(Icons.remove, color: Colors.teal),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -444,11 +609,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     double largura,
     double altura,
   ) {
-    final dias = ultimaVisita == null
-        ? null
-        : DateTime.now().difference(ultimaVisita).inDays;
-    final emDia = dias != null && dias <= diasLimiteVisita;
-
+    final emDia = _estaEmDia(ultimaVisita);
     final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
 
     return Positioned(

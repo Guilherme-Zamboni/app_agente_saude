@@ -209,4 +209,47 @@ class MoradorDao {
     );
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
+
+    // Retorna, para cada domicílio do território, o conjunto de marcadores
+  // de saúde presentes (gestante, idoso, crianca, hipertensao, diabetes...).
+  // Usado para filtrar os pinos no mapa.
+  Future<Map<String, Set<String>>> marcadoresPorDomicilio(
+      String territorioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id as domicilio_id, m.comorbidades, m.gestante, m.data_nascimento
+      FROM morador m
+      INNER JOIN familia f ON m.familia_id = f.id AND f.ativo = 1
+      INNER JOIN domicilio d ON f.domicilio_id = d.id AND d.ativo = 1
+      WHERE d.territorio_id = ? AND m.ativo = 1
+    ''', [territorioId]);
+
+    final agora = DateTime.now();
+    final mapa = <String, Set<String>>{};
+
+    for (final linha in resultado) {
+      final domicilioId = linha['domicilio_id'] as String;
+      final marcadores = mapa.putIfAbsent(domicilioId, () => <String>{});
+
+      final comorbidades = (linha['comorbidades'] as String?) ?? '';
+      for (final c in comorbidades.split(',')) {
+        if (c.trim().isNotEmpty) marcadores.add(c.trim());
+      }
+
+      if (linha['gestante'] == 1) marcadores.add('gestante');
+
+      final nascimento = DateTime.parse(linha['data_nascimento'] as String);
+      final idade = agora.year -
+          nascimento.year -
+          ((agora.month < nascimento.month ||
+                  (agora.month == nascimento.month && agora.day < nascimento.day))
+              ? 1
+              : 0);
+      if (idade <= 4) marcadores.add('crianca');
+      if (idade >= 60) marcadores.add('idoso');
+    }
+
+    return mapa;
+  }
+  
 }
