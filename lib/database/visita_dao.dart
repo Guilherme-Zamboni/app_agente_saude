@@ -126,4 +126,45 @@ class VisitaDao {
 
     return resultado.map((r) => r['id'] as String).toList();
   }
+
+    // Data da visita mais recente de um domicílio (considerando todas as
+  // famílias dele, e tanto visitas gerais quanto individuais)
+  Future<DateTime?> dataUltimaVisitaDomicilio(String domicilioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT MAX(v.data_visita) as ultima
+      FROM visita v
+      INNER JOIN familia f ON v.familia_id = f.id
+      WHERE f.domicilio_id = ? AND f.ativo = 1
+    ''', [domicilioId]);
+
+    final ultima = resultado.first['ultima'] as String?;
+    if (ultima == null) return null;
+    return DateTime.parse(ultima);
+  }
+
+  // Mapa com a última visita de cada domicílio de um território,
+  // para colorir os pinos do mapa de uma vez só (sem uma consulta por casa)
+  Future<Map<String, DateTime>> ultimasVisitasPorTerritorio(
+      String territorioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id as domicilio_id, MAX(v.data_visita) as ultima
+      FROM domicilio d
+      INNER JOIN familia f ON f.domicilio_id = d.id AND f.ativo = 1
+      INNER JOIN visita v ON v.familia_id = f.id
+      WHERE d.territorio_id = ? AND d.ativo = 1
+      GROUP BY d.id
+    ''', [territorioId]);
+
+    final mapa = <String, DateTime>{};
+    for (final linha in resultado) {
+      final ultima = linha['ultima'] as String?;
+      if (ultima != null) {
+        mapa[linha['domicilio_id'] as String] = DateTime.parse(ultima);
+      }
+    }
+    return mapa;
+  }
+  
 }

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../models/domicilio.dart';
 import '../database/domicilio_dao.dart';
+import '../database/visita_dao.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
 import 'tela_estatisticas.dart';
 import 'tela_selecionar_local_mapa.dart';
+
+// Quantos dias sem visita para o domicílio voltar a contar como "pendente"
+const int diasLimiteVisita = 30;
 
 class TelaMapaTerritorio extends StatefulWidget {
   final String territorioId;
@@ -21,14 +25,22 @@ class TelaMapaTerritorio extends StatefulWidget {
   State<TelaMapaTerritorio> createState() => _TelaMapaTerritorioState();
 }
 
+class _DadosMapa {
+  final List<Domicilio> domicilios;
+  final Map<String, DateTime> ultimasVisitas;
+
+  _DadosMapa(this.domicilios, this.ultimasVisitas);
+}
+
 class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   final _domicilioDao = DomicilioDao();
-  late Future<List<Domicilio>> _domiciliosFuture;
+  final _visitaDao = VisitaDao();
+  late Future<_DadosMapa> _dadosFuture;
   final _controladorZoom = TransformationController();
   double _escalaAtual = 1.0;
 
   // TROQUE pelos números reais da sua imagem (largura / altura)
-  static const double _proporcaoMapa = 1074 / 764;
+  static const double _proporcaoMapa = 1200 / 900;
 
   @override
   void initState() {
@@ -49,14 +61,35 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   }
 
   void _carregar() {
-    _domiciliosFuture = _domicilioDao.listarPorTerritorio(widget.territorioId);
+    _dadosFuture = _buscarDados();
+  }
+
+  Future<_DadosMapa> _buscarDados() async {
+    final domicilios =
+        await _domicilioDao.listarPorTerritorio(widget.territorioId);
+    final visitas =
+        await _visitaDao.ultimasVisitasPorTerritorio(widget.territorioId);
+    return _DadosMapa(domicilios, visitas);
   }
 
   void _ajustarZoom(double fator) {
-    final matrizAtual = _controladorZoom.value.clone();
-    setState(() {
-      _controladorZoom.value = matrizAtual..scale(fator, fator, 1.0);
-    });
+    final tamanho = context.size;
+    if (tamanho == null) return;
+
+    final centro = Offset(tamanho.width / 2, tamanho.height / 2);
+    final matriz = _controladorZoom.value.clone();
+
+    final escalaAtual = matriz.getMaxScaleOnAxis();
+    final escalaDesejada = (escalaAtual * fator).clamp(1.0, 4.0);
+    final fatorReal = escalaDesejada / escalaAtual;
+    if (fatorReal == 1.0) return;
+
+    matriz
+      ..translate(centro.dx, centro.dy)
+      ..scale(fatorReal, fatorReal, 1.0)
+      ..translate(-centro.dx, -centro.dy);
+
+    setState(() => _controladorZoom.value = matriz);
   }
 
   Future<void> _abrirNovoDomicilio() async {
@@ -133,7 +166,24 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     }
   }
 
-  void _abrirMenuCasa(Domicilio d) {
+  String _textoUltimaVisita(DateTime? ultimaVisita) {
+    if (ultimaVisita == null) return 'Nunca visitado';
+
+    final dias = DateTime.now().difference(ultimaVisita).inDays;
+    final dataFormatada = '${ultimaVisita.day.toString().padLeft(2, '0')}/'
+        '${ultimaVisita.month.toString().padLeft(2, '0')}/${ultimaVisita.year}';
+
+    if (dias == 0) return 'Visitado hoje ($dataFormatada)';
+    if (dias == 1) return 'Visitado ontem ($dataFormatada)';
+    return 'Última visita há $dias dias ($dataFormatada)';
+  }
+
+  void _abrirMenuCasa(Domicilio d, DateTime? ultimaVisita) {
+    final dias = ultimaVisita == null
+        ? null
+        : DateTime.now().difference(ultimaVisita).inDays;
+    final emDia = dias != null && dias <= diasLimiteVisita;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -148,6 +198,31 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               subtitle: Text(d.bairro),
             ),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: emDia ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    emDia ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+                    color: emDia ? Colors.green[700] : Colors.orange[800],
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _textoUltimaVisita(ultimaVisita),
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.home_outlined),
@@ -222,14 +297,15 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         icon: const Icon(Icons.add_home),
         label: const Text('Novo domicílio'),
       ),
-      body: FutureBuilder<List<Domicilio>>(
-        future: _domiciliosFuture,
+      body: FutureBuilder<_DadosMapa>(
+        future: _dadosFuture,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final domicilios = snapshot.data!;
+          final domicilios = snapshot.data!.domicilios;
+          final ultimasVisitas = snapshot.data!.ultimasVisitas;
 
           if (domicilios.isEmpty) {
             return Center(
@@ -282,51 +358,55 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                             ),
                             for (final d in domicilios)
                               if (d.posX != null && d.posY != null)
-                                Positioned(
-                                  left: d.posX! * largura,
-                                  top: d.posY! * altura,
-                                  child: FractionalTranslation(
-                                    translation: const Offset(-0.5, -1.0),
-                                    child: Transform.scale(
-                                      scale: 1 / _escalaAtual,
-                                      alignment: Alignment.bottomCenter,
-                                      child: GestureDetector(
-                                        onTap: () => _abrirMenuCasa(d),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.location_on,
-                                                color: Colors.teal, size: 36),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                                boxShadow: const [
-                                                  BoxShadow(
-                                                      color: Colors.black26,
-                                                      blurRadius: 2),
-                                                ],
-                                              ),
-                                              child: Text(
-                                                d.numero,
-                                                style: const TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                _construirPino(
+                                  d,
+                                  ultimasVisitas[d.id],
+                                  largura,
+                                  altura,
                                 ),
                           ],
                         );
                       },
                     ),
+                  ),
+                ),
+              ),
+              // Legenda das cores
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 3),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.location_on, color: Colors.green, size: 18),
+                          SizedBox(width: 4),
+                          Text('Visitado', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.location_on,
+                              color: Color(0xFF546E7A), size: 18),
+                          SizedBox(width: 4),
+                          Text('Pendente', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -354,6 +434,56 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _construirPino(
+    Domicilio d,
+    DateTime? ultimaVisita,
+    double largura,
+    double altura,
+  ) {
+    final dias = ultimaVisita == null
+        ? null
+        : DateTime.now().difference(ultimaVisita).inDays;
+    final emDia = dias != null && dias <= diasLimiteVisita;
+
+    final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
+
+    return Positioned(
+      left: d.posX! * largura,
+      top: d.posY! * altura,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -1.0),
+        child: Transform.scale(
+          scale: 1 / _escalaAtual,
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: () => _abrirMenuCasa(d, ultimaVisita),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.location_on, color: cor, size: 36),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 2),
+                    ],
+                  ),
+                  child: Text(
+                    d.numero,
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -41,10 +41,24 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   }
 
   void _ajustarZoom(double fator) {
-    final matrizAtual = _controladorZoom.value.clone();
-    setState(() {
-      _controladorZoom.value = matrizAtual..scale(fator, fator, 1.0);
-    });
+    final tamanho = context.size;
+    if (tamanho == null) return;
+
+    // ancora o zoom no centro da tela, para não perder o enquadramento
+    final centro = Offset(tamanho.width / 2, tamanho.height / 2);
+    final matriz = _controladorZoom.value.clone();
+
+    final escalaAtual = matriz.getMaxScaleOnAxis();
+    final escalaDesejada = (escalaAtual * fator).clamp(1.0, 4.0);
+    final fatorReal = escalaDesejada / escalaAtual;
+    if (fatorReal == 1.0) return;
+
+    matriz
+      ..translate(centro.dx, centro.dy)
+      ..scale(fatorReal, fatorReal, 1.0)
+      ..translate(-centro.dx, -centro.dy);
+
+    setState(() => _controladorZoom.value = matriz);
   }
 
   void _aoTocarNoMapa(TapUpDetails details) {
