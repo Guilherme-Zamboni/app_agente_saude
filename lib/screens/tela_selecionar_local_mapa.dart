@@ -11,13 +11,10 @@ class TelaSelecionarLocalMapa extends StatefulWidget {
 }
 
 class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
-  static const double _larguraMapa = 1200;
-  static const double _alturaMapa = 1200;
-
   final _controladorZoom = TransformationController();
-  final _chaveMapa = GlobalKey(); // referência ao próprio mapa, para medir o toque
+  final _chaveMapa = GlobalKey();
 
-  Offset? _posicaoSelecionada; // coordenadas relativas, 0.0 a 1.0
+  Offset? _posicaoSelecionada; // proporção 0.0 a 1.0
 
   @override
   void initState() {
@@ -40,18 +37,16 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
     });
   }
 
-  void _aoTocarNoMapa(TapDownDetails details) {
-    // Mede em relação ao próprio SizedBox do mapa (via GlobalKey),
-    // e não em relação à tela inteira - isso mantém a conta correta
-    // mesmo com zoom, arraste ou camadas extras em volta.
+  void _aoTocarNoMapa(TapUpDetails details) {
     final box = _chaveMapa.currentContext!.findRenderObject() as RenderBox;
     final local = box.globalToLocal(details.globalPosition);
     setState(() {
       _posicaoSelecionada = Offset(
-        (local.dx / _larguraMapa).clamp(0.0, 1.0),
-        (local.dy / _alturaMapa).clamp(0.0, 1.0),
+        (local.dx / box.size.width).clamp(0.0, 1.0),
+        (local.dy / box.size.height).clamp(0.0, 1.0),
       );
     });
+    debugPrint('>>> TOQUE: resultado=$_posicaoSelecionada');
   }
 
   void _confirmar() {
@@ -61,85 +56,100 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
       );
       return;
     }
+    debugPrint('>>> CONFIRMAR: devolvendo $_posicaoSelecionada');
     Navigator.pop(context, _posicaoSelecionada);
   }
 
   @override
   Widget build(BuildContext context) {
+    final temPosicao = _posicaoSelecionada != null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Indique a localização'),
-        actions: [
-          TextButton(
-            onPressed: _confirmar,
-            child: const Text('Confirmar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
-      body: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text(
-              'Toque no local do mapa onde fica esta casa.',
-              style: TextStyle(fontSize: 15, color: Colors.black54),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: temPosicao ? _confirmar : null,
+              icon: const Icon(Icons.check),
+              label: Text(
+                temPosicao ? 'Confirmar localização' : 'Toque no mapa primeiro',
+                style: const TextStyle(fontSize: 17),
+              ),
             ),
           ),
-          Expanded(
-            child: Stack(
-              children: [
-                InteractiveViewer(
-                  transformationController: _controladorZoom,
-                  minScale: 0.5,
-                  maxScale: 3,
-                  constrained: false,
-                  boundaryMargin: const EdgeInsets.all(80),
-                  child: GestureDetector(
-                    onTapDown: _aoTocarNoMapa,
-                    child: SizedBox(
-                      key: _chaveMapa,
-                      width: _larguraMapa,
-                      height: _alturaMapa,
-                      child: Stack(
-                        children: [
-                          Image.asset(
-                            'assets/maps/territorio_teste.jpg',
-                            width: _larguraMapa,
-                            height: _alturaMapa,
-                            fit: BoxFit.cover,
-                          ),
-                          if (_posicaoSelecionada != null)
-                            Positioned(
-                              left: _posicaoSelecionada!.dx * _larguraMapa - 20,
-                              top: _posicaoSelecionada!.dy * _alturaMapa - 40,
-                              child: const Icon(Icons.location_on,
-                                  color: Colors.red, size: 40),
-                            ),
-                        ],
-                      ),
+        ),
+      ),
+      body: Stack(
+        children: [
+          InteractiveViewer(
+            transformationController: _controladorZoom,
+            minScale: 1,
+            maxScale: 4,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: _aoTocarNoMapa,
+              child: SizedBox.expand(
+                key: _chaveMapa,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      'assets/maps/territorio_teste.jpg',
+                      fit: BoxFit.contain,
                     ),
-                  ),
+                    if (_posicaoSelecionada != null)
+                      Align(
+                        alignment: Alignment(
+                          _posicaoSelecionada!.dx * 2 - 1,
+                          _posicaoSelecionada!.dy * 2 - 1,
+                        ),
+                        child: const Icon(Icons.location_on,
+                            color: Colors.red, size: 44),
+                      ),
+                  ],
                 ),
-                Positioned(
-                  left: 16,
-                  bottom: 16,
-                  child: Column(
-                    children: [
-                      FloatingActionButton.small(
-                        heroTag: 'zoomInSelecao',
-                        backgroundColor: Colors.white,
-                        onPressed: () => _ajustarZoom(1.2),
-                        child: const Icon(Icons.add, color: Colors.teal),
-                      ),
-                      const SizedBox(height: 8),
-                      FloatingActionButton.small(
-                        heroTag: 'zoomOutSelecao',
-                        backgroundColor: Colors.white,
-                        onPressed: () => _ajustarZoom(1 / 1.2),
-                        child: const Icon(Icons.remove, color: Colors.teal),
-                      ),
-                    ],
-                  ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Toque no local do mapa onde fica esta casa.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            bottom: 16,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'zoomInSelecao',
+                  backgroundColor: Colors.white,
+                  onPressed: () => _ajustarZoom(1.2),
+                  child: const Icon(Icons.add, color: Colors.teal),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'zoomOutSelecao',
+                  backgroundColor: Colors.white,
+                  onPressed: () => _ajustarZoom(1 / 1.2),
+                  child: const Icon(Icons.remove, color: Colors.teal),
                 ),
               ],
             ),

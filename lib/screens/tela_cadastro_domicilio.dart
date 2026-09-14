@@ -85,7 +85,7 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     if (!mounted) return;
 
     // Pede para o agente indicar onde fica a casa no mapa antes de seguir
-    final posicao = await Navigator.push<Offset>(
+    final posicao = await Navigator.push<Offset?>(
       context,
       MaterialPageRoute(builder: (_) => const TelaSelecionarLocalMapa()),
     );

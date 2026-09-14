@@ -86,7 +86,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   }
 
   Future<void> _moverNoMapa(Domicilio domicilio) async {
-    final posicao = await Navigator.push<Offset>(
+    final posicao = await Navigator.push<Offset?>(
       context,
       MaterialPageRoute(
         builder: (_) => TelaSelecionarLocalMapa(
@@ -272,7 +272,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                         'assets/maps/territorio_teste.jpg',
                         width: _larguraMapa,
                         height: _alturaMapa,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                       ),
                       for (final d in domicilios)
                         if (d.posX != null && d.posY != null)
