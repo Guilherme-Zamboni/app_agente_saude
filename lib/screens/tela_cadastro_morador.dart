@@ -22,17 +22,17 @@ const Map<String, String> comorbidadesLabels = {
 };
 
 class TelaCadastroMorador extends StatefulWidget {
-  // domicilioId só é necessário ao CRIAR um morador novo (a família é criada
-  // junto). Em modo de edição, não é usado.
   final String? domicilioId;
   final String? observacoesFamilia;
   final Morador? moradorParaEditar;
+  final String? familiaExistenteId;
 
   const TelaCadastroMorador({
     super.key,
     this.domicilioId,
     this.observacoesFamilia,
     this.moradorParaEditar,
+    this.familiaExistenteId,
   });
 
   @override
@@ -60,6 +60,8 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
   @override
   void initState() {
     super.initState();
+    _familiaId = widget.familiaExistenteId;
+
     if (_editando) {
       final m = widget.moradorParaEditar!;
       _familiaId = m.familiaId;
@@ -94,7 +96,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
 
     setState(() => _salvando = true);
 
-    // --- Modo edição: atualiza o morador existente e volta ---
+    // --- Modo edição ---
     if (_editando) {
       final atualizado = Morador(
         id: widget.moradorParaEditar!.id,
@@ -121,7 +123,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
       return;
     }
 
-    // --- Modo cadastro: cria a família (se ainda não existir) + o morador ---
+    // --- Modo cadastro ---
     if (_familiaId == null) {
       final novaFamilia = Familia(
         id: const Uuid().v4(),
@@ -202,7 +204,11 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
         const SnackBar(content: Text('Morador cadastrado! Adicione o próximo.')),
       );
     } else {
-      Navigator.popUntil(context, (route) => route.isFirst);
+      if (widget.familiaExistenteId != null) {
+        Navigator.pop(context);
+      } else {
+        Navigator.popUntil(context, (route) => route.isFirst);
+      }
     }
   }
 
@@ -241,8 +247,8 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
                   _dataNascimento == null
                       ? 'Selecionar data de nascimento'
                       : 'Nascimento: ${_dataNascimento!.day.toString().padLeft(2, '0')}/'
-                        '${_dataNascimento!.month.toString().padLeft(2, '0')}/'
-                        '${_dataNascimento!.year}',
+                          '${_dataNascimento!.month.toString().padLeft(2, '0')}/'
+                          '${_dataNascimento!.year}',
                   style: const TextStyle(fontSize: 18),
                 ),
                 trailing: const Icon(Icons.calendar_today),
@@ -256,7 +262,8 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 24),
-              const Text('Comorbidades', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text('Comorbidades',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -297,7 +304,8 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
                 SizedBox(
                   height: 56,
                   child: OutlinedButton(
-                    onPressed: _salvando ? null : () => _salvar(cadastrarOutro: true),
+                    onPressed:
+                        _salvando ? null : () => _salvar(cadastrarOutro: true),
                     child: const Text('Salvar e cadastrar outro morador',
                         style: TextStyle(fontSize: 16)),
                   ),

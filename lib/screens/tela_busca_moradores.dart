@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/morador.dart';
 import '../database/morador_dao.dart';
+import '../main.dart';
 import 'tela_ficha_morador.dart';
+import 'tela_mapa_territorio.dart';
 
 class TelaBuscaMoradores extends StatefulWidget {
   const TelaBuscaMoradores({super.key});
@@ -16,7 +18,7 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
   final _nomeController = TextEditingController();
   final _nomeDaMaeController = TextEditingController();
   final _ruaController = TextEditingController();
-  final _bairroController = TextEditingController();
+  final _numeroController = TextEditingController();
   DateTime? _dataNascimento;
 
   List<Morador> _resultados = [];
@@ -35,7 +37,7 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
 
   bool get _temFiltroPorEndereco =>
       _ruaController.text.trim().isNotEmpty ||
-      _bairroController.text.trim().isNotEmpty;
+      _numeroController.text.trim().isNotEmpty;
 
   bool get _temFiltroPorDados =>
       _nomeController.text.trim().isNotEmpty ||
@@ -58,11 +60,11 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
     List<Morador> resultado;
 
     if (_temFiltroPorEndereco) {
-      // Busca por endereço (junta com nome/mãe/nascimento se preenchidos,
-      // filtrando o resultado depois em memória, já que são tabelas diferentes)
       resultado = await _moradorDao.buscarPorEndereco(
         rua: _ruaController.text.trim().isEmpty ? null : _ruaController.text.trim(),
-        bairro: _bairroController.text.trim().isEmpty ? null : _bairroController.text.trim(),
+        numero: _numeroController.text.trim().isEmpty
+            ? null
+            : _numeroController.text.trim(),
       );
 
       if (_temFiltroPorDados) {
@@ -81,7 +83,9 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
       }
     } else {
       resultado = await _moradorDao.buscar(
-        nome: _nomeController.text.trim().isEmpty ? null : _nomeController.text.trim(),
+        nome: _nomeController.text.trim().isEmpty
+            ? null
+            : _nomeController.text.trim(),
         nomeDaMae: _nomeDaMaeController.text.trim().isEmpty
             ? null
             : _nomeDaMaeController.text.trim(),
@@ -100,7 +104,7 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
     _nomeController.clear();
     _nomeDaMaeController.clear();
     _ruaController.clear();
-    _bairroController.clear();
+    _numeroController.clear();
     setState(() {
       _dataNascimento = null;
       _resultados = [];
@@ -118,11 +122,35 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
     return idade;
   }
 
-    void _abrirFicha(Morador m) {
+  void _abrirFicha(Morador m) {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => TelaFichaMorador(morador: m)),
-    ).then((_) => setState(() {})); // atualiza a lista ao voltar (nome pode ter mudado)
+    ).then((_) => setState(() {}));
+  }
+
+  Future<void> _verNoMapa(Morador m) async {
+    final domicilioId = await _moradorDao.domicilioDoMorador(m.id);
+
+    if (!mounted) return;
+
+    if (domicilioId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível localizar o domicílio')),
+      );
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaMapaTerritorio(
+          territorioId: territorioTesteId,
+          nomeTerritorio: 'Território de Teste',
+          domicilioDestacado: domicilioId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -169,8 +197,8 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
                     _dataNascimento == null
                         ? 'Data de nascimento (opcional)'
                         : '${_dataNascimento!.day.toString().padLeft(2, '0')}/'
-                          '${_dataNascimento!.month.toString().padLeft(2, '0')}/'
-                          '${_dataNascimento!.year}',
+                            '${_dataNascimento!.month.toString().padLeft(2, '0')}/'
+                            '${_dataNascimento!.year}',
                     style: const TextStyle(fontSize: 18),
                   ),
                   trailing: _dataNascimento != null
@@ -185,6 +213,7 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
                 Row(
                   children: [
                     Expanded(
+                      flex: 2,
                       child: TextField(
                         controller: _ruaController,
                         style: const TextStyle(fontSize: 18),
@@ -194,9 +223,10 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextField(
-                        controller: _bairroController,
+                        controller: _numeroController,
                         style: const TextStyle(fontSize: 18),
-                        decoration: const InputDecoration(labelText: 'Bairro'),
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Número'),
                       ),
                     ),
                   ],
@@ -245,13 +275,25 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
                           final m = _resultados[index];
                           return ListTile(
                             leading: const CircleAvatar(child: Icon(Icons.person)),
-                            title: Text(m.nome, style: const TextStyle(fontSize: 17)),
+                            title:
+                                Text(m.nome, style: const TextStyle(fontSize: 17)),
                             subtitle: Text(
                               '${_calcularIdade(m.dataNascimento)} anos'
                               '${m.gestante ? ' • Gestante' : ''}',
                             ),
-                            trailing: const Icon(Icons.chevron_right),
                             onTap: () => _abrirFicha(m),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.map_outlined,
+                                      color: Colors.teal),
+                                  tooltip: 'Ver no mapa',
+                                  onPressed: () => _verNoMapa(m),
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
                           );
                         },
                       ),

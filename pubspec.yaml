@@ -44,6 +44,9 @@ dependencies:
   file_picker: ^12.1.0
   uuid: ^4.6.0
   intl: ^0.20.3
+  collection: ^1.19.1
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:

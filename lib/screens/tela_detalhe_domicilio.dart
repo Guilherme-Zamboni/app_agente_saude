@@ -8,6 +8,7 @@ import '../database/familia_dao.dart';
 import '../database/morador_dao.dart';
 import '../database/visita_dao.dart';
 import 'tela_cadastro_familia.dart';
+import 'tela_cadastro_morador.dart';
 import 'tela_ficha_morador.dart';
 
 class TelaDetalheDomicilio extends StatefulWidget {
@@ -181,7 +182,12 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
 
   void _carregarTudo() {
     _moradoresFuture = _moradorDao.listarPorFamilia(widget.familia.id);
-    _ultimaVisitaFamiliaFuture = _visitaDao.dataUltimaVisitaFamilia(widget.familia.id);
+    _ultimaVisitaFamiliaFuture =
+        _visitaDao.dataUltimaVisitaFamilia(widget.familia.id);
+  }
+
+  void _carregarMoradores() {
+    _moradoresFuture = _moradorDao.listarPorFamilia(widget.familia.id);
   }
 
   int _calcularIdade(DateTime nascimento) {
@@ -229,7 +235,7 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
     final visita = Visita(
       id: const Uuid().v4(),
       familiaId: widget.familia.id,
-      moradorId: null, // visita geral, cobre todos os moradores da família
+      moradorId: null,
       dataVisita: DateTime.now(),
       observacoes: observacoesController.text.trim().isEmpty
           ? null
@@ -243,6 +249,18 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Visita à família registrada!')),
     );
+  }
+
+  Future<void> _adicionarMorador() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaCadastroMorador(
+          familiaExistenteId: widget.familia.id,
+        ),
+      ),
+    );
+    setState(_carregarMoradores);
   }
 
   Future<void> _abrirFicha(Morador m) async {
@@ -284,7 +302,8 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ExpansionTile(
         leading: const Icon(Icons.family_restroom, color: Colors.teal),
-        title: const Text('Família', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Família',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         subtitle: FutureBuilder<DateTime?>(
           future: _ultimaVisitaFamiliaFuture,
           builder: (context, snapshot) {
@@ -331,32 +350,44 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
 
               final moradores = snapshot.data!;
 
-              if (moradores.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('Nenhum morador cadastrado nesta família.'),
-                );
-              }
-
               return Column(
-                children: moradores.map((m) {
-                  final idade = _calcularIdade(m.dataNascimento);
-                  return ListTile(
-                    leading: const Icon(Icons.person),
-                    title: Text(m.nome),
-                    subtitle: Text(
-                      '$idade anos'
-                      '${m.gestante ? ' • Gestante' : ''}'
-                      '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
+                children: [
+                  if (moradores.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Nenhum morador cadastrado nesta família.'),
+                    )
+                  else
+                    ...moradores.map((m) {
+                      final idade = _calcularIdade(m.dataNascimento);
+                      return ListTile(
+                        leading: const Icon(Icons.person),
+                        title: Text(m.nome),
+                        subtitle: Text(
+                          '$idade anos'
+                          '${m.gestante ? ' • Gestante' : ''}'
+                          '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
+                        ),
+                        onTap: () => _abrirFicha(m),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          tooltip: 'Excluir morador',
+                          onPressed: () => _excluirMorador(m),
+                        ),
+                      );
+                    }),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _adicionarMorador,
+                        icon: const Icon(Icons.person_add_alt),
+                        label: const Text('Adicionar morador'),
+                      ),
                     ),
-                    onTap: () => _abrirFicha(m),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      tooltip: 'Excluir morador',
-                      onPressed: () => _excluirMorador(m),
-                    ),
-                  );
-                }).toList(),
+                  ),
+                ],
               );
             },
           ),

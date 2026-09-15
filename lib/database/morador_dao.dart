@@ -140,7 +140,7 @@ class MoradorDao {
 
   Future<List<Morador>> buscarPorEndereco({
     String? rua,
-    String? bairro,
+    String? numero,
   }) async {
     final db = await dbHelper.database;
     final condicoes = <String>['m.ativo = 1', 'f.ativo = 1', 'd.ativo = 1'];
@@ -150,9 +150,9 @@ class MoradorDao {
       condicoes.add('d.rua LIKE ?');
       valores.add('%$rua%');
     }
-    if (bairro != null && bairro.trim().isNotEmpty) {
-      condicoes.add('d.bairro LIKE ?');
-      valores.add('%$bairro%');
+    if (numero != null && numero.trim().isNotEmpty) {
+      condicoes.add('d.numero LIKE ?');
+      valores.add('%$numero%');
     }
 
     final resultado = await db.rawQuery('''
@@ -252,4 +252,19 @@ class MoradorDao {
     return mapa;
   }
   
+    // Retorna o id do domicílio onde o morador reside (para localizar no mapa)
+  Future<String?> domicilioDoMorador(String moradorId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id as domicilio_id
+      FROM morador m
+      INNER JOIN familia f ON m.familia_id = f.id
+      INNER JOIN domicilio d ON f.domicilio_id = d.id
+      WHERE m.id = ?
+    ''', [moradorId]);
+
+    if (resultado.isEmpty) return null;
+    return resultado.first['domicilio_id'] as String?;
+  }
+
 }

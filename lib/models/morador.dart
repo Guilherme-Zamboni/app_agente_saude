@@ -64,4 +64,6 @@ class Morador {
       atualizadoEm: DateTime.parse(map['atualizado_em']),
     );
   }
+
+  
 }

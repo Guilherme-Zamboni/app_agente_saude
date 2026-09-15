@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
 import '../models/domicilio.dart';
 import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
@@ -11,7 +12,6 @@ import 'tela_selecionar_local_mapa.dart';
 
 const int diasLimiteVisita = 30;
 
-// Opções do filtro de pinos
 enum FiltroMapa {
   todos,
   pendentes,
@@ -37,11 +37,13 @@ const Map<FiltroMapa, String> rotulosFiltro = {
 class TelaMapaTerritorio extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
+  final String? domicilioDestacado;
 
   const TelaMapaTerritorio({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
+    this.domicilioDestacado,
   });
 
   @override
@@ -62,8 +64,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   final _moradorDao = MoradorDao();
   late Future<_DadosMapa> _dadosFuture;
   final _controladorZoom = TransformationController();
+  final _chaveMapa = GlobalKey();
   double _escalaAtual = 1.0;
   FiltroMapa _filtroAtual = FiltroMapa.todos;
+  String? _destacado;
 
   // TROQUE pelos números reais da sua imagem (largura / altura)
   static const double _proporcaoMapa = 1200 / 900;
@@ -71,6 +75,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   @override
   void initState() {
     super.initState();
+    _destacado = widget.domicilioDestacado;
     _carregar();
     _controladorZoom.addListener(() {
       final escala = _controladorZoom.value.getMaxScaleOnAxis();
@@ -78,6 +83,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         setState(() => _escalaAtual = escala);
       }
     });
+
+    if (_destacado != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _focarDestacado());
+    }
   }
 
   @override
@@ -98,6 +107,39 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     final marcadores =
         await _moradorDao.marcadoresPorDomicilio(widget.territorioId);
     return _DadosMapa(domicilios, visitas, marcadores);
+  }
+
+  Future<void> _focarDestacado() async {
+    final dados = await _dadosFuture;
+    final alvo = dados.domicilios.firstWhereOrNull((d) => d.id == _destacado);
+    if (alvo == null || alvo.posX == null || alvo.posY == null) return;
+    if (!mounted) return;
+
+    // espera o mapa terminar de ser desenhado antes de medir
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!mounted) return;
+
+    final boxMapa = _chaveMapa.currentContext?.findRenderObject() as RenderBox?;
+    final boxViewport = context.findRenderObject() as RenderBox?;
+    if (boxMapa == null || boxViewport == null) return;
+
+    final tamanhoMapa = boxMapa.size;
+    final tamanhoTela = boxViewport.size;
+
+    const escala = 2.5;
+
+    final alvoX = alvo.posX! * tamanhoMapa.width * escala;
+    final alvoY = alvo.posY! * tamanhoMapa.height * escala;
+
+    final matriz = Matrix4.identity()
+      ..scale(escala, escala, 1.0)
+      ..setTranslationRaw(
+        tamanhoTela.width / 2 - alvoX,
+        tamanhoTela.height / 2 - alvoY,
+        0,
+      );
+
+    setState(() => _controladorZoom.value = matriz);
   }
 
   bool _estaEmDia(DateTime? ultimaVisita) {
@@ -150,7 +192,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   }
 
   void _resetarZoom() {
-    setState(() => _controladorZoom.value = Matrix4.identity());
+    setState(() {
+      _controladorZoom.value = Matrix4.identity();
+      _destacado = null;
+    });
   }
 
   void _abrirFiltro() {
@@ -456,7 +501,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
 
           return Column(
             children: [
-              // Contador no topo
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -492,6 +536,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                       maxScale: 4,
                       child: Center(
                         child: AspectRatio(
+                          key: _chaveMapa,
                           aspectRatio: _proporcaoMapa,
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -522,7 +567,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                         ),
                       ),
                     ),
-                    // Legenda
                     Positioned(
                       top: 12,
                       right: 12,
@@ -563,7 +607,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                         ),
                       ),
                     ),
-                    // Botões de centralizar e zoom
                     Positioned(
                       left: 16,
                       bottom: 16,
@@ -611,6 +654,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   ) {
     final emDia = _estaEmDia(ultimaVisita);
     final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
+    final destacado = d.id == _destacado;
 
     return Positioned(
       left: d.posX! * largura,
@@ -625,7 +669,23 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.location_on, color: cor, size: 36),
+                if (destacado)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    margin: const EdgeInsets.only(bottom: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[700],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('encontrado',
+                        style: TextStyle(fontSize: 9, color: Colors.white)),
+                  ),
+                Icon(
+                  Icons.location_on,
+                  color: destacado ? Colors.amber[800] : cor,
+                  size: destacado ? 46 : 36,
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
