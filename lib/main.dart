@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'models/territorio.dart';
-import 'database/territorio_dao.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config/supabase_config.dart';
+import 'services/auth_service.dart';
+import 'screens/tela_login.dart';
 import 'screens/tela_mapa_territorio.dart';
-import 'screens/tela_bloqueio.dart';
+import 'screens/tela_painel_coordenador.dart';
 
-const String territorioTesteId = 'territorio-teste-001';
-
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    anonKey: SupabaseConfig.anonKey,
+  );
+
   runApp(const MeuApp());
 }
 
@@ -24,68 +30,139 @@ class MeuApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('pt', 'BR'),
-      ],
+      supportedLocales: const [Locale('pt', 'BR')],
       theme: ThemeData(
         primarySwatch: Colors.teal,
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF2F7F5),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(fontSize: 18),
-        ),
+        textTheme: const TextTheme(bodyLarge: TextStyle(fontSize: 18)),
       ),
-      home: const TelaInicial(),
+      home: const Roteador(),
     );
   }
 }
 
-class TelaInicial extends StatefulWidget {
-  const TelaInicial({super.key});
+// Decide qual tela mostrar conforme o estado de login e o papel do usuário
+class Roteador extends StatefulWidget {
+  const Roteador({super.key});
 
   @override
-  State<TelaInicial> createState() => _TelaInicialState();
+  State<Roteador> createState() => _RoteadorState();
 }
 
-class _TelaInicialState extends State<TelaInicial> {
-  final _territorioDao = TerritorioDao();
-  bool _pronto = false;
+class _RoteadorState extends State<Roteador> {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final sessao = Supabase.instance.client.auth.currentSession;
+
+        if (sessao == null) {
+          return const TelaLogin();
+        }
+
+        return const _CarregandoPerfil();
+      },
+    );
+  }
+}
+
+class _CarregandoPerfil extends StatefulWidget {
+  const _CarregandoPerfil();
+
+  @override
+  State<_CarregandoPerfil> createState() => _CarregandoPerfilState();
+}
+
+class _CarregandoPerfilState extends State<_CarregandoPerfil> {
+  late Future<_DadosSessao> _future;
 
   @override
   void initState() {
     super.initState();
-    _prepararTerritorioTeste();
+    _future = _carregar();
   }
 
-  Future<void> _prepararTerritorioTeste() async {
-    final existente = await _territorioDao.buscarPorId(territorioTesteId);
-
-    if (existente == null) {
-      await _territorioDao.inserir(
-        Territorio(
-          id: territorioTesteId,
-          nome: 'Território de Teste',
-          agenteId: 'agente-teste-001',
-        ),
-      );
-    }
-
-    setState(() => _pronto = true);
+  Future<_DadosSessao> _carregar() async {
+    final perfil = await AuthService.carregarPerfil();
+    final territorio = await AuthService.meuTerritorio();
+    return _DadosSessao(perfil, territorio);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_pronto) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+    return FutureBuilder<_DadosSessao>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    return TelaBloqueio(
-      telaAposDesbloqueio: const TelaMapaTerritorio(
-        territorioId: territorioTesteId,
-        nomeTerritorio: 'Território de Teste',
+        final perfil = snapshot.data!.perfil;
+        final territorio = snapshot.data!.territorio;
+
+        if (perfil == null) {
+          return _telaAviso(
+            'Seu usuário ainda não tem perfil cadastrado. '
+            'Fale com a coordenação.',
+          );
+        }
+
+        if (perfil.eCoordenador) {
+          return TelaPainelCoordenador(perfil: perfil);
+        }
+
+        if (territorio == null) {
+          return _telaAviso(
+            'Olá, ${perfil.nome}!\n\n'
+            'Você ainda não tem uma microárea vinculada. '
+            'Fale com a coordenação.',
+          );
+        }
+
+        return TelaMapaTerritorio(
+          territorioId: territorio['id'],
+          nomeTerritorio: territorio['nome'],
+        );
+      },
+    );
+  }
+
+  Widget _telaAviso(String mensagem) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.info_outline, size: 56, color: Colors.black38),
+              const SizedBox(height: 16),
+              Text(
+                mensagem,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 17),
+              ),
+              const SizedBox(height: 28),
+              OutlinedButton.icon(
+                onPressed: () => AuthService.sair(),
+                icon: const Icon(Icons.logout),
+                label: const Text('Sair'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
+
+class _DadosSessao {
+  final PerfilUsuario? perfil;
+  final Map<String, dynamic>? territorio;
+
+  _DadosSessao(this.perfil, this.territorio);
 }

@@ -4,6 +4,7 @@ import '../models/domicilio.dart';
 import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
 import '../database/morador_dao.dart';
+import '../services/auth_service.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
@@ -115,7 +116,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     if (alvo == null || alvo.posX == null || alvo.posY == null) return;
     if (!mounted) return;
 
-    // espera o mapa terminar de ser desenhado antes de medir
     await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
 
@@ -196,6 +196,29 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
       _controladorZoom.value = Matrix4.identity();
       _destacado = null;
     });
+  }
+
+  Future<void> _sair() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Sair do aplicativo'),
+        content: const Text('Deseja encerrar sua sessão?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true) {
+      await AuthService.sair();
+    }
   }
 
   void _abrirFiltro() {
@@ -448,9 +471,19 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const TelaBuscaMoradores()),
+                MaterialPageRoute(
+                  builder: (_) => TelaBuscaMoradores(
+                    territorioId: widget.territorioId,
+                    nomeTerritorio: widget.nomeTerritorio,
+                  ),
+                ),
               );
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair',
+            onPressed: _sair,
           ),
         ],
       ),

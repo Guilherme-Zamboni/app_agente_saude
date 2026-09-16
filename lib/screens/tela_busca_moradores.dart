@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import '../models/morador.dart';
 import '../database/morador_dao.dart';
-import '../main.dart';
 import 'tela_ficha_morador.dart';
 import 'tela_mapa_territorio.dart';
 
 class TelaBuscaMoradores extends StatefulWidget {
-  const TelaBuscaMoradores({super.key});
+  final String territorioId;
+  final String nomeTerritorio;
+
+  const TelaBuscaMoradores({
+    super.key,
+    required this.territorioId,
+    required this.nomeTerritorio,
+  });
 
   @override
   State<TelaBuscaMoradores> createState() => _TelaBuscaMoradoresState();
@@ -145,8 +151,8 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
       context,
       MaterialPageRoute(
         builder: (_) => TelaMapaTerritorio(
-          territorioId: territorioTesteId,
-          nomeTerritorio: 'Território de Teste',
+          territorioId: widget.territorioId,
+          nomeTerritorio: widget.nomeTerritorio,
           domicilioDestacado: domicilioId,
         ),
       ),
