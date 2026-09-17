@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'services/auth_service.dart';
+import 'services/sync_service.dart';
 import 'screens/tela_login.dart';
 import 'screens/tela_mapa_territorio.dart';
 import 'screens/tela_painel_coordenador.dart';
@@ -42,7 +43,6 @@ class MeuApp extends StatelessWidget {
   }
 }
 
-// Decide qual tela mostrar conforme o estado de login e o papel do usuário
 class Roteador extends StatefulWidget {
   const Roteador({super.key});
 
@@ -87,6 +87,12 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
   Future<_DadosSessao> _carregar() async {
     final perfil = await AuthService.carregarPerfil();
     final territorio = await AuthService.meuTerritorio();
+
+    // grava o território no banco local para as chaves estrangeiras funcionarem
+    if (territorio != null) {
+      await SyncService.garantirTerritorioLocal(territorio);
+    }
+
     return _DadosSessao(perfil, territorio);
   }
 

@@ -11,6 +11,7 @@ class Morador {
   final bool ativo;
   final DateTime criadoEm;
   final DateTime atualizadoEm;
+  final bool sincronizado;
 
   Morador({
     required this.id,
@@ -25,6 +26,7 @@ class Morador {
     this.ativo = true,
     required this.criadoEm,
     required this.atualizadoEm,
+    this.sincronizado = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -41,12 +43,30 @@ class Morador {
       'ativo': ativo ? 1 : 0,
       'criado_em': criadoEm.toIso8601String(),
       'atualizado_em': atualizadoEm.toIso8601String(),
+      'sincronizado': sincronizado ? 1 : 0,
     };
   }
 
-  
+  Map<String, dynamic> toSupabase() {
+    return {
+      'id': id,
+      'familia_id': familiaId,
+      'nome': nome,
+      'nome_da_mae': nomeDaMae,
+      // no Postgres a coluna é do tipo date, então enviamos só a data
+      'data_nascimento': dataNascimento.toIso8601String().split('T').first,
+      'cpf': cpf,
+      'comorbidades': comorbidades.join(','),
+      'gestante': gestante,
+      'anotacoes_agente': anotacoesAgente,
+      'ativo': ativo,
+      'criado_em': criadoEm.toIso8601String(),
+      'atualizado_em': atualizadoEm.toIso8601String(),
+    };
+  }
 
   factory Morador.fromMap(Map<String, dynamic> map) {
+    final comorbidadesTexto = (map['comorbidades'] as String?) ?? '';
     return Morador(
       id: map['id'],
       familiaId: map['familia_id'],
@@ -54,16 +74,14 @@ class Morador {
       nomeDaMae: map['nome_da_mae'],
       dataNascimento: DateTime.parse(map['data_nascimento']),
       cpf: map['cpf'],
-      comorbidades: (map['comorbidades'] as String).isEmpty
-          ? []
-          : (map['comorbidades'] as String).split(','),
-      gestante: map['gestante'] == 1,
+      comorbidades:
+          comorbidadesTexto.isEmpty ? [] : comorbidadesTexto.split(','),
+      gestante: map['gestante'] == 1 || map['gestante'] == true,
       anotacoesAgente: map['anotacoes_agente'],
-      ativo: map['ativo'] == 1,
+      ativo: map['ativo'] == 1 || map['ativo'] == true,
       criadoEm: DateTime.parse(map['criado_em']),
       atualizadoEm: DateTime.parse(map['atualizado_em']),
+      sincronizado: map['sincronizado'] == 1 || map['sincronizado'] == true,
     );
   }
-
-  
 }

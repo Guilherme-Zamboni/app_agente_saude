@@ -9,7 +9,7 @@ class MoradorDao {
     final db = await dbHelper.database;
     await db.insert(
       'morador',
-      morador.toMap(),
+      {...morador.toMap(), 'sincronizado': 0},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -18,7 +18,7 @@ class MoradorDao {
     final db = await dbHelper.database;
     await db.update(
       'morador',
-      morador.toMap(),
+      {...morador.toMap(), 'sincronizado': 0},
       where: 'id = ?',
       whereArgs: [morador.id],
     );
@@ -28,18 +28,25 @@ class MoradorDao {
     final db = await dbHelper.database;
     await db.update(
       'morador',
-      {'ativo': 0, 'atualizado_em': DateTime.now().toIso8601String()},
+      {
+        'ativo': 0,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
   }
 
-  // Usado em cascata quando uma família inteira é excluída
   Future<void> inativarPorFamilia(String familiaId) async {
     final db = await dbHelper.database;
     await db.update(
       'morador',
-      {'ativo': 0, 'atualizado_em': DateTime.now().toIso8601String()},
+      {
+        'ativo': 0,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'familia_id = ?',
       whereArgs: [familiaId],
     );
@@ -49,7 +56,11 @@ class MoradorDao {
     final db = await dbHelper.database;
     await db.update(
       'morador',
-      {'ativo': 1, 'atualizado_em': DateTime.now().toIso8601String()},
+      {
+        'ativo': 1,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -64,6 +75,20 @@ class MoradorDao {
     );
     if (resultado.isEmpty) return null;
     return Morador.fromMap(resultado.first);
+  }
+
+  Future<String?> domicilioDoMorador(String moradorId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id as domicilio_id
+      FROM morador m
+      INNER JOIN familia f ON m.familia_id = f.id
+      INNER JOIN domicilio d ON f.domicilio_id = d.id
+      WHERE m.id = ?
+    ''', [moradorId]);
+
+    if (resultado.isEmpty) return null;
+    return resultado.first['domicilio_id'] as String?;
   }
 
   Future<List<Morador>> listarPorFamilia(String familiaId) async {
@@ -85,6 +110,46 @@ class MoradorDao {
       WHERE d.territorio_id = ? AND m.ativo = 1 AND f.ativo = 1 AND d.ativo = 1
     ''', [territorioId]);
     return resultado.map((m) => Morador.fromMap(m)).toList();
+  }
+
+  Future<Map<String, Set<String>>> marcadoresPorDomicilio(
+      String territorioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id as domicilio_id, m.comorbidades, m.gestante, m.data_nascimento
+      FROM morador m
+      INNER JOIN familia f ON m.familia_id = f.id AND f.ativo = 1
+      INNER JOIN domicilio d ON f.domicilio_id = d.id AND d.ativo = 1
+      WHERE d.territorio_id = ? AND m.ativo = 1
+    ''', [territorioId]);
+
+    final agora = DateTime.now();
+    final mapa = <String, Set<String>>{};
+
+    for (final linha in resultado) {
+      final domicilioId = linha['domicilio_id'] as String;
+      final marcadores = mapa.putIfAbsent(domicilioId, () => <String>{});
+
+      final comorbidades = (linha['comorbidades'] as String?) ?? '';
+      for (final c in comorbidades.split(',')) {
+        if (c.trim().isNotEmpty) marcadores.add(c.trim());
+      }
+
+      if (linha['gestante'] == 1) marcadores.add('gestante');
+
+      final nascimento = DateTime.parse(linha['data_nascimento'] as String);
+      final idade = agora.year -
+          nascimento.year -
+          ((agora.month < nascimento.month ||
+                  (agora.month == nascimento.month &&
+                      agora.day < nascimento.day))
+              ? 1
+              : 0);
+      if (idade <= 4) marcadores.add('crianca');
+      if (idade >= 60) marcadores.add('idoso');
+    }
+
+    return mapa;
   }
 
   String _normalizar(String texto) => texto.trim().toLowerCase();
@@ -209,62 +274,4 @@ class MoradorDao {
     );
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
-
-    // Retorna, para cada domicílio do território, o conjunto de marcadores
-  // de saúde presentes (gestante, idoso, crianca, hipertensao, diabetes...).
-  // Usado para filtrar os pinos no mapa.
-  Future<Map<String, Set<String>>> marcadoresPorDomicilio(
-      String territorioId) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery('''
-      SELECT d.id as domicilio_id, m.comorbidades, m.gestante, m.data_nascimento
-      FROM morador m
-      INNER JOIN familia f ON m.familia_id = f.id AND f.ativo = 1
-      INNER JOIN domicilio d ON f.domicilio_id = d.id AND d.ativo = 1
-      WHERE d.territorio_id = ? AND m.ativo = 1
-    ''', [territorioId]);
-
-    final agora = DateTime.now();
-    final mapa = <String, Set<String>>{};
-
-    for (final linha in resultado) {
-      final domicilioId = linha['domicilio_id'] as String;
-      final marcadores = mapa.putIfAbsent(domicilioId, () => <String>{});
-
-      final comorbidades = (linha['comorbidades'] as String?) ?? '';
-      for (final c in comorbidades.split(',')) {
-        if (c.trim().isNotEmpty) marcadores.add(c.trim());
-      }
-
-      if (linha['gestante'] == 1) marcadores.add('gestante');
-
-      final nascimento = DateTime.parse(linha['data_nascimento'] as String);
-      final idade = agora.year -
-          nascimento.year -
-          ((agora.month < nascimento.month ||
-                  (agora.month == nascimento.month && agora.day < nascimento.day))
-              ? 1
-              : 0);
-      if (idade <= 4) marcadores.add('crianca');
-      if (idade >= 60) marcadores.add('idoso');
-    }
-
-    return mapa;
-  }
-  
-    // Retorna o id do domicílio onde o morador reside (para localizar no mapa)
-  Future<String?> domicilioDoMorador(String moradorId) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery('''
-      SELECT d.id as domicilio_id
-      FROM morador m
-      INNER JOIN familia f ON m.familia_id = f.id
-      INNER JOIN domicilio d ON f.domicilio_id = d.id
-      WHERE m.id = ?
-    ''', [moradorId]);
-
-    if (resultado.isEmpty) return null;
-    return resultado.first['domicilio_id'] as String?;
-  }
-
 }

@@ -10,7 +10,7 @@ class DomicilioDao {
     final db = await dbHelper.database;
     await db.insert(
       'domicilio',
-      domicilio.toMap(),
+      {...domicilio.toMap(), 'sincronizado': 0},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -19,30 +19,41 @@ class DomicilioDao {
     final db = await dbHelper.database;
     await db.update(
       'domicilio',
-      domicilio.toMap(),
+      {
+        ...domicilio.toMap(),
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [domicilio.id],
     );
   }
 
-    // Salva a posição do pino no mapa (coordenadas relativas, 0.0 a 1.0)
   Future<void> atualizarPosicao(String id, double posX, double posY) async {
     final db = await dbHelper.database;
     await db.update(
       'domicilio',
-      {'pos_x': posX, 'pos_y': posY},
+      {
+        'pos_x': posX,
+        'pos_y': posY,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
   }
 
-  // Inativação em cascata: domicílio -> famílias -> moradores
   Future<void> inativar(String id) async {
     final db = await dbHelper.database;
 
     await db.update(
       'domicilio',
-      {'ativo': 0},
+      {
+        'ativo': 0,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -82,7 +93,7 @@ class DomicilioDao {
 
   Future<List<Domicilio>> buscarPorEndereco({
     String? rua,
-    String? bairro,
+    String? numero,
   }) async {
     final db = await dbHelper.database;
     final condicoes = <String>['ativo = 1'];
@@ -92,9 +103,9 @@ class DomicilioDao {
       condicoes.add('rua LIKE ?');
       valores.add('%$rua%');
     }
-    if (bairro != null && bairro.trim().isNotEmpty) {
-      condicoes.add('bairro LIKE ?');
-      valores.add('%$bairro%');
+    if (numero != null && numero.trim().isNotEmpty) {
+      condicoes.add('numero LIKE ?');
+      valores.add('%$numero%');
     }
 
     final resultado = await db.query(

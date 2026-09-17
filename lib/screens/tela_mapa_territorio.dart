@@ -5,6 +5,7 @@ import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
 import '../database/morador_dao.dart';
 import '../services/auth_service.dart';
+import '../widgets/barra_sincronizacao.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
@@ -66,6 +67,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   late Future<_DadosMapa> _dadosFuture;
   final _controladorZoom = TransformationController();
   final _chaveMapa = GlobalKey();
+  final _chaveSync = GlobalKey<BarraSincronizacaoState>();
   double _escalaAtual = 1.0;
   FiltroMapa _filtroAtual = FiltroMapa.todos;
   String? _destacado;
@@ -98,6 +100,12 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
 
   void _carregar() {
     _dadosFuture = _buscarDados();
+  }
+
+  /// Recarrega os dados do mapa e pede à barra que atualize o contador.
+  void _recarregarTudo() {
+    setState(_carregar);
+    _chaveSync.currentState?.atualizarStatusExterno();
   }
 
   Future<_DadosMapa> _buscarDados() async {
@@ -280,7 +288,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         builder: (_) => TelaCadastroDomicilio(territorioId: widget.territorioId),
       ),
     );
-    setState(_carregar);
+    _recarregarTudo();
   }
 
   Future<void> _abrirDetalhe(Domicilio domicilio) async {
@@ -288,7 +296,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
       context,
       MaterialPageRoute(builder: (_) => TelaDetalheDomicilio(domicilio: domicilio)),
     );
-    setState(_carregar);
+    _recarregarTudo();
   }
 
   Future<void> _abrirEdicao(Domicilio domicilio) async {
@@ -301,7 +309,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         ),
       ),
     );
-    setState(_carregar);
+    _recarregarTudo();
   }
 
   Future<void> _moverNoMapa(Domicilio domicilio) async {
@@ -316,7 +324,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     );
     if (posicao != null) {
       await _domicilioDao.atualizarPosicao(domicilio.id, posicao.dx, posicao.dy);
-      setState(_carregar);
+      _recarregarTudo();
     }
   }
 
@@ -343,7 +351,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     );
     if (confirmar == true) {
       await _domicilioDao.inativar(domicilio.id);
-      setState(_carregar);
+      _recarregarTudo();
     }
   }
 
@@ -502,176 +510,187 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
           final dados = snapshot.data!;
           final todos = dados.domicilios;
 
-          if (todos.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.map_outlined, size: 64, color: Colors.black26),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Nenhum domicílio cadastrado ainda neste território.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Toque em "Novo domicílio" para começar.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.black38),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
           final visiveis = todos.where((d) => _passaNoFiltro(d, dados)).toList();
           final pendentes =
               todos.where((d) => !_estaEmDia(dados.ultimasVisitas[d.id])).length;
 
           return Column(
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                color: Colors.teal.withValues(alpha: 0.08),
-                child: Row(
-                  children: [
-                    const Icon(Icons.home_work_outlined,
-                        size: 20, color: Colors.teal),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _filtroAtual == FiltroMapa.todos
-                            ? '${todos.length} domicílios • $pendentes pendente(s) de visita'
-                            : '${visiveis.length} de ${todos.length} • ${rotulosFiltro[_filtroAtual]}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    if (_filtroAtual != FiltroMapa.todos)
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _filtroAtual = FiltroMapa.todos),
-                        child: const Text('Limpar'),
-                      ),
-                  ],
-                ),
+              BarraSincronizacao(
+                key: _chaveSync,
+                territorioId: widget.territorioId,
+                aoSincronizar: () => setState(_carregar),
               ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    InteractiveViewer(
-                      transformationController: _controladorZoom,
-                      minScale: 1,
-                      maxScale: 4,
-                      child: Center(
-                        child: AspectRatio(
-                          key: _chaveMapa,
-                          aspectRatio: _proporcaoMapa,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final largura = constraints.maxWidth;
-                              final altura = constraints.maxHeight;
-
-                              return Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Image.asset(
-                                    'assets/maps/territorio_teste.jpg',
-                                    width: largura,
-                                    height: altura,
-                                    fit: BoxFit.fill,
-                                  ),
-                                  for (final d in visiveis)
-                                    if (d.posX != null && d.posY != null)
-                                      _construirPino(
-                                        d,
-                                        dados.ultimasVisitas[d.id],
-                                        largura,
-                                        altura,
-                                      ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black26, blurRadius: 3),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.location_on,
-                                    color: Colors.green, size: 18),
-                                SizedBox(width: 4),
-                                Text('Visitado', style: TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.location_on,
-                                    color: Color(0xFF546E7A), size: 18),
-                                SizedBox(width: 4),
-                                Text('Pendente', style: TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 16,
-                      bottom: 16,
+              if (todos.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
                       child: Column(
-                        children: [
-                          FloatingActionButton.small(
-                            heroTag: 'centralizar',
-                            backgroundColor: Colors.white,
-                            onPressed: _resetarZoom,
-                            child: const Icon(Icons.center_focus_strong,
-                                color: Colors.teal),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.map_outlined, size: 64, color: Colors.black26),
+                          SizedBox(height: 16),
+                          Text(
+                            'Nenhum domicílio cadastrado ainda neste território.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 18, color: Colors.black54),
                           ),
-                          const SizedBox(height: 8),
-                          FloatingActionButton.small(
-                            heroTag: 'zoomIn',
-                            backgroundColor: Colors.white,
-                            onPressed: () => _ajustarZoom(1.2),
-                            child: const Icon(Icons.add, color: Colors.teal),
-                          ),
-                          const SizedBox(height: 8),
-                          FloatingActionButton.small(
-                            heroTag: 'zoomOut',
-                            backgroundColor: Colors.white,
-                            onPressed: () => _ajustarZoom(1 / 1.2),
-                            child: const Icon(Icons.remove, color: Colors.teal),
+                          SizedBox(height: 8),
+                          Text(
+                            'Toque em "Novo domicílio" para começar.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 16, color: Colors.black38),
                           ),
                         ],
                       ),
                     ),
-                  ],
+                  ),
+                )
+              else ...[
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: Colors.teal.withValues(alpha: 0.08),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.home_work_outlined,
+                          size: 20, color: Colors.teal),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _filtroAtual == FiltroMapa.todos
+                              ? '${todos.length} domicílios • $pendentes pendente(s) de visita'
+                              : '${visiveis.length} de ${todos.length} • ${rotulosFiltro[_filtroAtual]}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                      if (_filtroAtual != FiltroMapa.todos)
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _filtroAtual = FiltroMapa.todos),
+                          child: const Text('Limpar'),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      InteractiveViewer(
+                        transformationController: _controladorZoom,
+                        minScale: 1,
+                        maxScale: 4,
+                        child: Center(
+                          child: AspectRatio(
+                            key: _chaveMapa,
+                            aspectRatio: _proporcaoMapa,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final largura = constraints.maxWidth;
+                                final altura = constraints.maxHeight;
+
+                                return Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Image.asset(
+                                      'assets/maps/territorio_teste.jpg',
+                                      width: largura,
+                                      height: altura,
+                                      fit: BoxFit.fill,
+                                    ),
+                                    for (final d in visiveis)
+                                      if (d.posX != null && d.posY != null)
+                                        _construirPino(
+                                          d,
+                                          dados.ultimasVisitas[d.id],
+                                          largura,
+                                          altura,
+                                        ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black26, blurRadius: 3),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.location_on,
+                                      color: Colors.green, size: 18),
+                                  SizedBox(width: 4),
+                                  Text('Visitado',
+                                      style: TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.location_on,
+                                      color: Color(0xFF546E7A), size: 18),
+                                  SizedBox(width: 4),
+                                  Text('Pendente',
+                                      style: TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 16,
+                        bottom: 16,
+                        child: Column(
+                          children: [
+                            FloatingActionButton.small(
+                              heroTag: 'centralizar',
+                              backgroundColor: Colors.white,
+                              onPressed: _resetarZoom,
+                              child: const Icon(Icons.center_focus_strong,
+                                  color: Colors.teal),
+                            ),
+                            const SizedBox(height: 8),
+                            FloatingActionButton.small(
+                              heroTag: 'zoomIn',
+                              backgroundColor: Colors.white,
+                              onPressed: () => _ajustarZoom(1.2),
+                              child: const Icon(Icons.add, color: Colors.teal),
+                            ),
+                            const SizedBox(height: 8),
+                            FloatingActionButton.small(
+                              heroTag: 'zoomOut',
+                              backgroundColor: Colors.white,
+                              onPressed: () => _ajustarZoom(1 / 1.2),
+                              child:
+                                  const Icon(Icons.remove, color: Colors.teal),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           );
         },

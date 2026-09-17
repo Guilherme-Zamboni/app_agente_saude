@@ -246,7 +246,7 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
 
     if (confirmar != true) return;
 
-    await _visitaDao.deletar(visita.id);
+    await _visitaDao.inativar(visita.id);
 
     if (!mounted) return;
     setState(_carregar);

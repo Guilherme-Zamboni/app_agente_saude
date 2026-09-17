@@ -10,7 +10,7 @@ class FamiliaDao {
     final db = await dbHelper.database;
     await db.insert(
       'familia',
-      familia.toMap(),
+      {...familia.toMap(), 'sincronizado': 0},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -19,19 +19,26 @@ class FamiliaDao {
     final db = await dbHelper.database;
     await db.update(
       'familia',
-      familia.toMap(),
+      {
+        ...familia.toMap(),
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [familia.id],
     );
   }
 
-  // Inativação em cascata: família -> moradores
   Future<void> inativar(String id) async {
     final db = await dbHelper.database;
 
     await db.update(
       'familia',
-      {'ativo': 0},
+      {
+        'ativo': 0,
+        'atualizado_em': DateTime.now().toIso8601String(),
+        'sincronizado': 0,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
