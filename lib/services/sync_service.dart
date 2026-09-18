@@ -114,8 +114,9 @@ class SyncService {
       try {
         await _cliente.from(tabela).upsert(converter(registro));
         enviadosComSucesso.add(registro['id'] as String);
-      } catch (_) {
-        // mantém pendente para a próxima tentativa
+      } catch (e) {
+        // ignore: avoid_print
+        print('>>> FALHA ao enviar $tabela id=${registro['id']}: $e');
       }
     }
 

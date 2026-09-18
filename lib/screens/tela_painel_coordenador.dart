@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'tela_gestao_agentes.dart';
 import 'tela_gestao_territorios.dart';
+import 'tela_selecionar_microarea.dart';
 
 class TelaPainelCoordenador extends StatelessWidget {
   final PerfilUsuario perfil;
@@ -50,6 +51,13 @@ class TelaPainelCoordenador extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+          _opcao(
+            context,
+            icone: Icons.travel_explore,
+            titulo: 'Consultar microáreas',
+            descricao: 'Ver o mapa e os moradores de cada agente',
+            destino: const TelaSelecionarMicroarea(),
+          ),
           _opcao(
             context,
             icone: Icons.people_outline,
