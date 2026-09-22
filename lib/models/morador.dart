@@ -7,6 +7,7 @@ class Morador {
   final String? cpf;
   final List<String> comorbidades;
   final bool gestante;
+  final bool acamado;
   final String? anotacoesAgente;
   final bool ativo;
   final DateTime criadoEm;
@@ -22,6 +23,7 @@ class Morador {
     this.cpf,
     this.comorbidades = const [],
     this.gestante = false,
+    this.acamado = false,
     this.anotacoesAgente,
     this.ativo = true,
     required this.criadoEm,
@@ -39,6 +41,7 @@ class Morador {
       'cpf': cpf,
       'comorbidades': comorbidades.join(','),
       'gestante': gestante ? 1 : 0,
+      'acamado': acamado ? 1 : 0,
       'anotacoes_agente': anotacoesAgente,
       'ativo': ativo ? 1 : 0,
       'criado_em': criadoEm.toIso8601String(),
@@ -58,6 +61,7 @@ class Morador {
       'cpf': cpf,
       'comorbidades': comorbidades.join(','),
       'gestante': gestante,
+      'acamado': acamado,
       'anotacoes_agente': anotacoesAgente,
       'ativo': ativo,
       'criado_em': criadoEm.toIso8601String(),
@@ -77,6 +81,7 @@ class Morador {
       comorbidades:
           comorbidadesTexto.isEmpty ? [] : comorbidadesTexto.split(','),
       gestante: map['gestante'] == 1 || map['gestante'] == true,
+      acamado: map['acamado'] == 1 || map['acamado'] == true,
       anotacoesAgente: map['anotacoes_agente'],
       ativo: map['ativo'] == 1 || map['ativo'] == true,
       criadoEm: DateTime.parse(map['criado_em']),

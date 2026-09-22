@@ -50,6 +50,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
 
   DateTime? _dataNascimento;
   bool _gestante = false;
+  bool _acamado = false;
   final Set<String> _comorbidadesSelecionadas = {};
   bool _salvando = false;
 
@@ -71,6 +72,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
       _anotacoesController.text = m.anotacoesAgente ?? '';
       _dataNascimento = m.dataNascimento;
       _gestante = m.gestante;
+      _acamado = m.acamado;
       _comorbidadesSelecionadas.addAll(m.comorbidades);
     }
   }
@@ -107,6 +109,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
         cpf: _cpfController.text.trim().isEmpty ? null : _cpfController.text.trim(),
         comorbidades: _comorbidadesSelecionadas.toList(),
         gestante: _gestante,
+        acamado: _acamado,
         anotacoesAgente: _anotacoesController.text.trim().isEmpty
             ? null
             : _anotacoesController.text.trim(),
@@ -177,6 +180,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
       cpf: _cpfController.text.trim().isEmpty ? null : _cpfController.text.trim(),
       comorbidades: _comorbidadesSelecionadas.toList(),
       gestante: _gestante,
+      acamado: _acamado,
       anotacoesAgente: _anotacoesController.text.trim().isEmpty
           ? null
           : _anotacoesController.text.trim(),
@@ -198,6 +202,7 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
       setState(() {
         _dataNascimento = null;
         _gestante = false;
+        _acamado = false;
         _comorbidadesSelecionadas.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -290,6 +295,13 @@ class _TelaCadastroMoradorState extends State<TelaCadastroMorador> {
                 title: const Text('Gestante', style: TextStyle(fontSize: 18)),
                 value: _gestante,
                 onChanged: (v) => setState(() => _gestante = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Acamado', style: TextStyle(fontSize: 18)),
+                subtitle: const Text('Não consegue sair da cama ou de casa'),
+                value: _acamado,
+                onChanged: (v) => setState(() => _acamado = v),
               ),
               const SizedBox(height: 16),
               TextFormField(

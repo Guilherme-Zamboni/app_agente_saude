@@ -21,7 +21,7 @@ class DatabaseHelper {
     return await openDatabase(
       path,
       password: chave,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -75,6 +75,7 @@ class DatabaseHelper {
         cpf TEXT,
         comorbidades TEXT,
         gestante INTEGER NOT NULL DEFAULT 0,
+        acamado INTEGER NOT NULL DEFAULT 0,
         anotacoes_agente TEXT,
         ativo INTEGER NOT NULL DEFAULT 1,
         criado_em TEXT NOT NULL,
@@ -138,6 +139,11 @@ class DatabaseHelper {
     if (versaoAntiga < 3) {
       await db.execute(
           'ALTER TABLE visita ADD COLUMN ativo INTEGER NOT NULL DEFAULT 1');
+    }
+
+    if (versaoAntiga < 4) {
+      await db.execute(
+          'ALTER TABLE morador ADD COLUMN acamado INTEGER NOT NULL DEFAULT 0');
     }
   }
 

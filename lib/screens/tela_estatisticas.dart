@@ -27,8 +27,9 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
   Future<_DadosEstatisticas> _carregarDados() async {
     final total = await _moradorDao.contarTotal();
     final gestantes = await _moradorDao.contarGestantes();
-    final criancas = await _moradorDao.contarCriancasAte4Anos();
+    final criancas = await _moradorDao.contarCriancasMenores2Anos();
     final idosos = await _moradorDao.contarIdosos();
+    final acamados = await _moradorDao.contarAcamados();
 
     final comorbidades = <String, int>{};
     for (final c in comorbidadesDisponiveis) {
@@ -40,6 +41,7 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
       gestantes: gestantes,
       criancas: criancas,
       idosos: idosos,
+      acamados: acamados,
       comorbidades: comorbidades,
     );
   }
@@ -79,10 +81,12 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
             );
           }
 
+          final maiorComorbidade = dados.comorbidades.values
+              .fold<int>(0, (a, b) => a > b ? a : b);
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // --- Card com o total geral ---
               Card(
                 color: Colors.teal[50],
                 child: Padding(
@@ -91,42 +95,41 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                     children: [
                       Text('${dados.total}',
                           style: const TextStyle(
-                              fontSize: 40, fontWeight: FontWeight.bold, color: Colors.teal)),
+                              fontSize: 40,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal)),
                       const Text('moradores cadastrados na área',
                           style: TextStyle(fontSize: 15, color: Colors.black54)),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // --- Grade com os grupos prioritários ---
               GridView.count(
-                crossAxisCount: 3,
+                crossAxisCount: 2,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 1,
+                childAspectRatio: 1.5,
                 children: [
-                  _cartaoNumero('Gestantes', dados.gestantes, Icons.pregnant_woman, Colors.pink),
-                  _cartaoNumero('0-4 anos', dados.criancas, Icons.child_care, Colors.blue),
-                  _cartaoNumero('Idosos 60+', dados.idosos, Icons.elderly, Colors.orange),
+                  _cartaoNumero('Gestantes', dados.gestantes,
+                      Icons.pregnant_woman, Colors.pink),
+                  _cartaoNumero('Menores de 2 anos', dados.criancas,
+                      Icons.child_care, Colors.blue),
+                  _cartaoNumero(
+                      'Idosos 60+', dados.idosos, Icons.elderly, Colors.orange),
+                  _cartaoNumero(
+                      'Acamados', dados.acamados, Icons.bed, Colors.purple),
                 ],
               ),
-
               const SizedBox(height: 24),
-
               const Text('Comorbidades',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-
-              // --- Gráfico de barras das comorbidades ---
-              // --- Gráfico de barras das comorbidades ---
               SizedBox(
                 height: 260,
-                child: dados.comorbidades.values.every((v) => v == 0)
+                child: maiorComorbidade == 0
                     ? const Center(
                         child: Text('Nenhuma comorbidade registrada ainda.',
                             style: TextStyle(color: Colors.black45)),
@@ -134,11 +137,7 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                     : BarChart(
                         BarChartData(
                           alignment: BarChartAlignment.spaceAround,
-                          maxY: (dados.comorbidades.values
-                                          .fold<int>(0, (a, b) => a > b ? a : b) +
-                                      1)
-                                  .toDouble() +
-                              0.5,
+                          maxY: maiorComorbidade + 1.5,
                           barTouchData: BarTouchData(enabled: true),
                           titlesData: FlTitlesData(
                             leftTitles: AxisTitles(
@@ -173,8 +172,8 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                                   if (index < 0 || index >= chaves.length) {
                                     return const SizedBox.shrink();
                                   }
-                                  final label =
-                                      comorbidadesLabels[chaves[index]] ?? chaves[index];
+                                  final label = comorbidadesLabels[chaves[index]] ??
+                                      chaves[index];
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 8),
                                     child: SizedBox(
@@ -193,7 +192,7 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                             ),
                           ),
                           borderData: FlBorderData(show: false),
-                          gridData: FlGridData(
+                          gridData: const FlGridData(
                             show: true,
                             drawVerticalLine: false,
                             horizontalInterval: 1,
@@ -204,13 +203,11 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                               .asMap()
                               .entries
                               .map((entry) {
-                            final index = entry.key;
-                            final valor = entry.value.value;
                             return BarChartGroupData(
-                              x: index,
+                              x: entry.key,
                               barRods: [
                                 BarChartRodData(
-                                  toY: valor.toDouble(),
+                                  toY: entry.value.value.toDouble(),
                                   color: Colors.teal,
                                   width: 20,
                                   borderRadius: BorderRadius.circular(4),
@@ -221,10 +218,7 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                         ),
                       ),
               ),
-
               const SizedBox(height: 24),
-
-              // --- Lista com os percentuais exatos ---
               const Text('Percentuais',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -232,8 +226,10 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
                 child: Column(
                   children: [
                     _linhaPercentual('Gestantes', dados.gestantes, dados.total),
-                    _linhaPercentual('Crianças de 0 a 4 anos', dados.criancas, dados.total),
+                    _linhaPercentual(
+                        'Crianças menores de 2 anos', dados.criancas, dados.total),
                     _linhaPercentual('Idosos (60+)', dados.idosos, dados.total),
+                    _linhaPercentual('Acamados', dados.acamados, dados.total),
                     for (final entry in dados.comorbidades.entries)
                       _linhaPercentual(
                         comorbidadesLabels[entry.key] ?? entry.key,
@@ -257,15 +253,15 @@ class _TelaEstatisticasState extends State<TelaEstatisticas> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icone, color: cor, size: 26),
-            const SizedBox(height: 6),
+            Icon(icone, color: cor, size: 28),
+            const SizedBox(height: 4),
             Text('$valor',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: cor)),
-            const SizedBox(height: 2),
+                style: TextStyle(
+                    fontSize: 22, fontWeight: FontWeight.bold, color: cor)),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: Colors.black54),
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
           ],
         ),
@@ -291,6 +287,7 @@ class _DadosEstatisticas {
   final int gestantes;
   final int criancas;
   final int idosos;
+  final int acamados;
   final Map<String, int> comorbidades;
 
   _DadosEstatisticas({
@@ -298,6 +295,7 @@ class _DadosEstatisticas {
     required this.gestantes,
     required this.criancas,
     required this.idosos,
+    required this.acamados,
     required this.comorbidades,
   });
 }

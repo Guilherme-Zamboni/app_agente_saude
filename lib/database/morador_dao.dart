@@ -112,18 +112,29 @@ class MoradorDao {
     return resultado.map((m) => Morador.fromMap(m)).toList();
   }
 
+  int _idade(DateTime nascimento) {
+    final agora = DateTime.now();
+    int idade = agora.year - nascimento.year;
+    if (agora.month < nascimento.month ||
+        (agora.month == nascimento.month && agora.day < nascimento.day)) {
+      idade--;
+    }
+    return idade;
+  }
+
+  /// Marcadores de saúde de cada domicílio, usados nos filtros do mapa.
   Future<Map<String, Set<String>>> marcadoresPorDomicilio(
       String territorioId) async {
     final db = await dbHelper.database;
     final resultado = await db.rawQuery('''
-      SELECT d.id as domicilio_id, m.comorbidades, m.gestante, m.data_nascimento
+      SELECT d.id as domicilio_id, m.comorbidades, m.gestante, m.acamado,
+             m.data_nascimento
       FROM morador m
       INNER JOIN familia f ON m.familia_id = f.id AND f.ativo = 1
       INNER JOIN domicilio d ON f.domicilio_id = d.id AND d.ativo = 1
       WHERE d.territorio_id = ? AND m.ativo = 1
     ''', [territorioId]);
 
-    final agora = DateTime.now();
     final mapa = <String, Set<String>>{};
 
     for (final linha in resultado) {
@@ -136,16 +147,10 @@ class MoradorDao {
       }
 
       if (linha['gestante'] == 1) marcadores.add('gestante');
+      if (linha['acamado'] == 1) marcadores.add('acamado');
 
-      final nascimento = DateTime.parse(linha['data_nascimento'] as String);
-      final idade = agora.year -
-          nascimento.year -
-          ((agora.month < nascimento.month ||
-                  (agora.month == nascimento.month &&
-                      agora.day < nascimento.day))
-              ? 1
-              : 0);
-      if (idade <= 4) marcadores.add('crianca');
+      final idade = _idade(DateTime.parse(linha['data_nascimento'] as String));
+      if (idade < 2) marcadores.add('crianca');
       if (idade >= 60) marcadores.add('idoso');
     }
 
@@ -230,6 +235,14 @@ class MoradorDao {
     return resultado.map((m) => Morador.fromMap(m)).toList();
   }
 
+  // ---------- ESTATÍSTICAS ----------
+
+  /// Data exata de N anos atrás, no mesmo formato gravado no banco.
+  String _dataHaAnos(int anos) {
+    final hoje = DateTime.now();
+    return DateTime(hoje.year - anos, hoje.month, hoje.day).toIso8601String();
+  }
+
   Future<int> contarTotal() async {
     final db = await dbHelper.database;
     final resultado = await db.rawQuery(
@@ -255,22 +268,30 @@ class MoradorDao {
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
 
-  Future<int> contarCriancasAte4Anos() async {
+  Future<int> contarAcamados() async {
     final db = await dbHelper.database;
-    final limite = DateTime.now().subtract(const Duration(days: 4 * 365));
     final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE data_nascimento >= ? AND ativo = 1',
-      [limite.toIso8601String()],
+      'SELECT COUNT(*) as total FROM morador WHERE acamado = 1 AND ativo = 1',
     );
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
 
+  /// Crianças menores de 2 anos (quem completa 2 anos hoje já não conta).
+  Future<int> contarCriancasMenores2Anos() async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery(
+      'SELECT COUNT(*) as total FROM morador WHERE data_nascimento > ? AND ativo = 1',
+      [_dataHaAnos(2)],
+    );
+    return Sqflite.firstIntValue(resultado) ?? 0;
+  }
+
+  /// Idosos com 60 anos ou mais.
   Future<int> contarIdosos({int idadeMinima = 60}) async {
     final db = await dbHelper.database;
-    final limite = DateTime.now().subtract(Duration(days: idadeMinima * 365));
     final resultado = await db.rawQuery(
       'SELECT COUNT(*) as total FROM morador WHERE data_nascimento <= ? AND ativo = 1',
-      [limite.toIso8601String()],
+      [_dataHaAnos(idadeMinima)],
     );
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
