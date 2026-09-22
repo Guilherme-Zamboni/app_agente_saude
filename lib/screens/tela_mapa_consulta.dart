@@ -34,12 +34,14 @@ class TelaMapaConsulta extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
   final String? nomeAgente;
+  final String? domicilioDestacado;
 
   const TelaMapaConsulta({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
     this.nomeAgente,
+    this.domicilioDestacado,
   });
 
   @override
@@ -57,8 +59,10 @@ class _Dados {
 class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
   late Future<_Dados> _future;
   final _controladorZoom = TransformationController();
+  final _chaveMapa = GlobalKey();
   double _escalaAtual = 1.0;
   FiltroConsulta _filtroAtual = FiltroConsulta.todos;
+  String? _destacado;
 
   // TROQUE pelos números reais da sua imagem (largura / altura)
   static const double _proporcaoMapa = 1200 / 900;
@@ -66,6 +70,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
   @override
   void initState() {
     super.initState();
+    _destacado = widget.domicilioDestacado;
     _future = _carregar();
     _controladorZoom.addListener(() {
       final escala = _controladorZoom.value.getMaxScaleOnAxis();
@@ -73,6 +78,10 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
         setState(() => _escalaAtual = escala);
       }
     });
+
+    if (_destacado != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _focarDestacado());
+    }
   }
 
   @override
@@ -88,6 +97,44 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
     final marcadores =
         await ConsultaService.marcadoresPorDomicilio(widget.territorioId);
     return _Dados(domicilios, visitas, marcadores);
+  }
+
+  Future<void> _focarDestacado() async {
+    final dados = await _future;
+    Domicilio? alvo;
+    for (final d in dados.domicilios) {
+      if (d.id == _destacado) {
+        alvo = d;
+        break;
+      }
+    }
+    if (alvo == null || alvo.posX == null || alvo.posY == null) return;
+    if (!mounted) return;
+
+    // espera o mapa terminar de ser desenhado antes de medir
+    await Future.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+
+    final boxMapa = _chaveMapa.currentContext?.findRenderObject() as RenderBox?;
+    final boxViewport = context.findRenderObject() as RenderBox?;
+    if (boxMapa == null || boxViewport == null) return;
+
+    final tamanhoMapa = boxMapa.size;
+    final tamanhoTela = boxViewport.size;
+
+    const escala = 2.5;
+    final alvoX = alvo.posX! * tamanhoMapa.width * escala;
+    final alvoY = alvo.posY! * tamanhoMapa.height * escala;
+
+    final matriz = Matrix4.identity()
+      ..scale(escala, escala, 1.0)
+      ..setTranslationRaw(
+        tamanhoTela.width / 2 - alvoX,
+        tamanhoTela.height / 2 - alvoY,
+        0,
+      );
+
+    setState(() => _controladorZoom.value = matriz);
   }
 
   void _ajustarZoom(double fator) {
@@ -108,6 +155,13 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
       ..translate(-centro.dx, -centro.dy);
 
     setState(() => _controladorZoom.value = matriz);
+  }
+
+  void _resetarZoom() {
+    setState(() {
+      _controladorZoom.value = Matrix4.identity();
+      _destacado = null;
+    });
   }
 
   bool _estaEmDia(DateTime? ultima) {
@@ -293,6 +347,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                 builder: (_) => TelaBuscaConsulta(
                   territorioId: widget.territorioId,
                   nomeTerritorio: widget.nomeTerritorio,
+                  nomeAgente: widget.nomeAgente,
                 ),
               ),
             ),
@@ -307,7 +362,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
               widget.nomeAgente != null
                   ? 'Agente: ${widget.nomeAgente} • somente leitura'
                   : 'Somente leitura',
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
           ),
         ),
@@ -386,6 +441,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                       maxScale: 4,
                       child: Center(
                         child: AspectRatio(
+                          key: _chaveMapa,
                           aspectRatio: _proporcaoMapa,
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -418,6 +474,14 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                       child: Column(
                         children: [
                           FloatingActionButton.small(
+                            heroTag: 'centralizarConsulta',
+                            backgroundColor: Colors.white,
+                            onPressed: _resetarZoom,
+                            child: const Icon(Icons.center_focus_strong,
+                                color: Colors.teal),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
                             heroTag: 'zoomInConsulta',
                             backgroundColor: Colors.white,
                             onPressed: () => _ajustarZoom(1.2),
@@ -447,6 +511,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
       Domicilio d, DateTime? ultimaVisita, double largura, double altura) {
     final emDia = _estaEmDia(ultimaVisita);
     final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
+    final destacado = d.id == _destacado;
 
     return Positioned(
       left: d.posX! * largura,
@@ -461,7 +526,23 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.location_on, color: cor, size: 36),
+                if (destacado)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    margin: const EdgeInsets.only(bottom: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[700],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('encontrado',
+                        style: TextStyle(fontSize: 9, color: Colors.white)),
+                  ),
+                Icon(
+                  Icons.location_on,
+                  color: destacado ? Colors.amber[800] : cor,
+                  size: destacado ? 46 : 36,
+                ),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 4, vertical: 1),

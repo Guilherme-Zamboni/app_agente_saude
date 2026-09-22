@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import '../models/morador.dart';
 import '../services/consulta_service.dart';
 import 'tela_ficha_consulta.dart';
+import 'tela_mapa_consulta.dart';
 
 class TelaBuscaConsulta extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
+  final String? nomeAgente;
 
   const TelaBuscaConsulta({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
+    this.nomeAgente,
   });
 
   @override
@@ -84,6 +87,31 @@ class _TelaBuscaConsultaState extends State<TelaBuscaConsulta> {
       _resultados = [];
       _jaBuscou = false;
     });
+  }
+
+  Future<void> _verNoMapa(Morador m) async {
+    final domicilioId = await ConsultaService.domicilioDoMorador(m.id);
+
+    if (!mounted) return;
+
+    if (domicilioId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível localizar o domicílio')),
+      );
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaMapaConsulta(
+          territorioId: widget.territorioId,
+          nomeTerritorio: widget.nomeTerritorio,
+          nomeAgente: widget.nomeAgente,
+          domicilioDestacado: domicilioId,
+        ),
+      ),
+    );
   }
 
   int _idade(DateTime nascimento) {
@@ -227,7 +255,6 @@ class _TelaBuscaConsultaState extends State<TelaBuscaConsulta> {
                               '${_idade(m.dataNascimento)} anos'
                               '${m.gestante ? ' • Gestante' : ''}',
                             ),
-                            trailing: const Icon(Icons.chevron_right),
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -237,6 +264,18 @@ class _TelaBuscaConsultaState extends State<TelaBuscaConsulta> {
                                   nomeMorador: m.nome,
                                 ),
                               ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.map_outlined,
+                                      color: Colors.teal),
+                                  tooltip: 'Ver no mapa',
+                                  onPressed: () => _verNoMapa(m),
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
                             ),
                           );
                         },
