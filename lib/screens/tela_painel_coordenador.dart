@@ -4,6 +4,7 @@ import 'tela_gestao_agentes.dart';
 import 'tela_gestao_territorios.dart';
 import 'tela_selecionar_microarea.dart';
 import 'tela_relatorio_coordenador.dart';
+import 'tela_estatisticas_consolidadas.dart';
 
 class TelaPainelCoordenador extends StatelessWidget {
   final PerfilUsuario perfil;
@@ -52,6 +53,13 @@ class TelaPainelCoordenador extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+          _opcao(
+            context,
+            icone: Icons.insights,
+            titulo: 'Visão geral',
+            descricao: 'Estatísticas consolidadas de todas as microáreas',
+            destino: const TelaEstatisticasConsolidadas(),
+          ),
           _opcao(
             context,
             icone: Icons.travel_explore,
