@@ -13,6 +13,7 @@ import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
 import 'tela_estatisticas.dart';
 import 'tela_selecionar_local_mapa.dart';
+import 'tela_relatorio.dart';
 
 const int diasLimiteVisita = 30;
 
@@ -533,6 +534,24 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                 : Icons.filter_alt),
             tooltip: 'Filtrar',
             onPressed: _abrirFiltro,
+          ),
+          IconButton(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: 'Relatório mensal',
+            onPressed: () async {
+              final perfil = await AuthService.carregarPerfil();
+              if (!context.mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TelaRelatorio(
+                    territorioId: widget.territorioId,
+                    nomeTerritorio: widget.nomeTerritorio,
+                    nomeAgente: perfil?.nome ?? 'Agente',
+                  ),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart),

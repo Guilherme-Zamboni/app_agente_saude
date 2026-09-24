@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import 'tela_gestao_agentes.dart';
 import 'tela_gestao_territorios.dart';
 import 'tela_selecionar_microarea.dart';
+import 'tela_relatorio_coordenador.dart';
 
 class TelaPainelCoordenador extends StatelessWidget {
   final PerfilUsuario perfil;
@@ -57,6 +58,14 @@ class TelaPainelCoordenador extends StatelessWidget {
             titulo: 'Consultar microáreas',
             descricao: 'Ver o mapa e os moradores de cada agente',
             destino: const TelaSelecionarMicroarea(),
+          ),
+          _opcao(
+            context,
+            icone: Icons.description_outlined,
+            titulo: 'Relatório mensal',
+            descricao: 'Gerar relatório por microárea ou consolidado',
+            destino:
+                TelaRelatorioCoordenador(nomeCoordenador: perfil.nome),
           ),
           _opcao(
             context,
