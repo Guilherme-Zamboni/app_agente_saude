@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/domicilio.dart';
+import '../models/visita.dart';
 import '../database/domicilio_dao.dart';
+import '../database/visita_dao.dart';
+import '../widgets/dialogo_visita.dart';
 import 'tela_cadastro_familia.dart';
 import 'tela_selecionar_local_mapa.dart';
 
@@ -26,6 +29,7 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
   final _bairroController = TextEditingController();
   final _complementoController = TextEditingController();
   final _domicilioDao = DomicilioDao();
+  final _visitaDao = VisitaDao();
 
   bool _salvando = false;
 
@@ -43,25 +47,29 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     }
   }
 
-   Future<void> _salvar() async {
+  String? get _complemento => _complementoController.text.trim().isEmpty
+      ? null
+      : _complementoController.text.trim();
+
+  Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _salvando = true);
 
+    // --- Modo edição: só atualiza o endereço ---
     if (_editando) {
-      final domicilioAtualizado = Domicilio(
-        id: widget.domicilioParaEditar!.id,
-        territorioId: widget.domicilioParaEditar!.territorioId,
+      final original = widget.domicilioParaEditar!;
+      await _domicilioDao.atualizar(Domicilio(
+        id: original.id,
+        territorioId: original.territorioId,
         rua: _ruaController.text.trim(),
         numero: _numeroController.text.trim(),
         bairro: _bairroController.text.trim(),
-        complemento: _complementoController.text.trim().isEmpty
-            ? null
-            : _complementoController.text.trim(),
-        posX: widget.domicilioParaEditar!.posX,
-        posY: widget.domicilioParaEditar!.posY,
-      );
-      await _domicilioDao.atualizar(domicilioAtualizado);
+        complemento: _complemento,
+        posX: original.posX,
+        posY: original.posY,
+        criadoEm: original.criadoEm,
+      ));
 
       if (!mounted) return;
       setState(() => _salvando = false);
@@ -69,22 +77,21 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
       return;
     }
 
+    // --- Modo cadastro ---
     final domicilio = Domicilio(
       id: const Uuid().v4(),
       territorioId: widget.territorioId,
       rua: _ruaController.text.trim(),
       numero: _numeroController.text.trim(),
       bairro: _bairroController.text.trim(),
-      complemento: _complementoController.text.trim().isEmpty
-          ? null
-          : _complementoController.text.trim(),
+      complemento: _complemento,
     );
 
     await _domicilioDao.inserir(domicilio);
 
     if (!mounted) return;
 
-    // Pede para o agente indicar onde fica a casa no mapa antes de seguir
+    // 1) marca a posição da casa no mapa
     final posicao = await Navigator.push<Offset?>(
       context,
       MaterialPageRoute(builder: (_) => const TelaSelecionarLocalMapa()),
@@ -97,10 +104,137 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     if (!mounted) return;
     setState(() => _salvando = false);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TelaCadastroFamilia(domicilioId: domicilio.id),
+    // 2) pergunta se encontrou moradores
+    final escolha = await _perguntarSeEncontrouMoradores();
+    if (!mounted) return;
+
+    if (escolha == 'familia') {
+      // segue o fluxo normal de cadastro da família
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TelaCadastroFamilia(domicilioId: domicilio.id),
+        ),
+      );
+      return;
+    }
+
+    // 'ninguem' ou fechou a escolha: a casa fica como não cadastrada
+    final mensageiro = ScaffoldMessenger.of(context);
+
+    if (escolha == 'ninguem') {
+      final dados = await mostrarDialogoVisita(
+        context,
+        titulo: 'Registrar tentativa de visita',
+        subtitulo: 'A casa foi salva como não cadastrada. '
+            'Toque em Cancelar se não quiser registrar a visita agora.',
+        permitirRealizada: false,
+        resultadoInicial: 'ausente',
+      );
+
+      if (dados != null) {
+        await _visitaDao.inserir(Visita(
+          id: const Uuid().v4(),
+          domicilioId: domicilio.id,
+          dataVisita: DateTime.now(),
+          resultado: dados.resultado,
+          observacoes: dados.observacoes,
+        ));
+      }
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context);
+    mensageiro.showSnackBar(
+      const SnackBar(content: Text('Casa salva como não cadastrada')),
+    );
+  }
+
+  /// Retorna 'familia', 'ninguem' ou null (se o agente fechar a tela).
+  Future<String?> _perguntarSeEncontrouMoradores() {
+    return showModalBottomSheet<String>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Encontrou moradores nesta casa?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              _opcaoGrande(
+                context,
+                valor: 'familia',
+                icone: Icons.family_restroom,
+                cor: Colors.teal,
+                titulo: 'Sim, cadastrar família',
+                descricao: 'Registrar a família e os moradores agora',
+              ),
+              const SizedBox(height: 12),
+              _opcaoGrande(
+                context,
+                valor: 'ninguem',
+                icone: Icons.house_outlined,
+                cor: Colors.purple,
+                titulo: 'Não, ninguém em casa',
+                descricao: 'Salvar como casa não cadastrada e registrar a '
+                    'tentativa de visita',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _opcaoGrande(
+    BuildContext context, {
+    required String valor,
+    required IconData icone,
+    required Color cor,
+    required String titulo,
+    required String descricao,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.pop(context, valor),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cor.withValues(alpha: 0.08),
+          border: Border.all(color: cor, width: 1.5),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icone, color: cor, size: 36),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(descricao,
+                      style:
+                          const TextStyle(fontSize: 14, color: Colors.black54)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -128,6 +262,7 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
               TextFormField(
                 controller: _numeroController,
                 style: const TextStyle(fontSize: 18),
+                keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Número'),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Informe o número' : null,

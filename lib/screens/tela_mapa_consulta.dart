@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/domicilio.dart';
 import '../models/familia.dart';
 import '../models/morador.dart';
+import '../models/visita.dart';
 import '../services/consulta_service.dart';
+import '../widgets/dialogo_visita.dart';
 import 'tela_busca_consulta.dart';
 import 'tela_ficha_consulta.dart';
+import 'tela_mapa_territorio.dart' show corPendente, corNaoCadastrada;
 
 const int _diasLimiteVisita = 30;
 
@@ -12,9 +15,12 @@ enum FiltroConsulta {
   todos,
   pendentes,
   visitados,
+  ausentes,
+  naoCadastradas,
   gestante,
   crianca,
   idoso,
+  acamado,
   hipertensao,
   diabetes,
 }
@@ -23,9 +29,12 @@ const Map<FiltroConsulta, String> _rotulosFiltro = {
   FiltroConsulta.todos: 'Todos',
   FiltroConsulta.pendentes: 'Pendentes de visita',
   FiltroConsulta.visitados: 'Visitados (30 dias)',
+  FiltroConsulta.ausentes: 'Ausentes ou recusadas',
+  FiltroConsulta.naoCadastradas: 'Casas não cadastradas',
   FiltroConsulta.gestante: 'Com gestante',
-  FiltroConsulta.crianca: 'Com criança (0-4)',
+  FiltroConsulta.crianca: 'Com criança (menor de 2 anos)',
   FiltroConsulta.idoso: 'Com idoso (60+)',
+  FiltroConsulta.acamado: 'Com acamado',
   FiltroConsulta.hipertensao: 'Com hipertensão',
   FiltroConsulta.diabetes: 'Com diabetes',
 };
@@ -50,10 +59,12 @@ class TelaMapaConsulta extends StatefulWidget {
 
 class _Dados {
   final List<Domicilio> domicilios;
-  final Map<String, DateTime> ultimasVisitas;
+  final Map<String, Map<String, dynamic>> ultimasVisitas;
   final Map<String, Set<String>> marcadores;
+  final Set<String> naoCadastrados;
 
-  _Dados(this.domicilios, this.ultimasVisitas, this.marcadores);
+  _Dados(this.domicilios, this.ultimasVisitas, this.marcadores,
+      this.naoCadastrados);
 }
 
 class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
@@ -93,10 +104,13 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
   Future<_Dados> _carregar() async {
     final domicilios =
         await ConsultaService.domiciliosDoTerritorio(widget.territorioId);
-    final visitas = await ConsultaService.ultimasVisitas(widget.territorioId);
+    final visitas =
+        await ConsultaService.ultimaVisitaPorDomicilio(widget.territorioId);
     final marcadores =
         await ConsultaService.marcadoresPorDomicilio(widget.territorioId);
-    return _Dados(domicilios, visitas, marcadores);
+    final naoCadastrados =
+        await ConsultaService.idsNaoCadastrados(widget.territorioId);
+    return _Dados(domicilios, visitas, marcadores, naoCadastrados);
   }
 
   Future<void> _focarDestacado() async {
@@ -111,7 +125,6 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
     if (alvo == null || alvo.posX == null || alvo.posY == null) return;
     if (!mounted) return;
 
-    // espera o mapa terminar de ser desenhado antes de medir
     await Future.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
 
@@ -164,13 +177,30 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
     });
   }
 
-  bool _estaEmDia(DateTime? ultima) {
-    if (ultima == null) return false;
-    return DateTime.now().difference(ultima).inDays <= _diasLimiteVisita;
+  DateTime? _dataDa(Map<String, dynamic>? visita) {
+    if (visita == null) return null;
+    return DateTime.tryParse(visita['data_visita'].toString());
+  }
+
+  String _resultadoDa(Map<String, dynamic>? visita) =>
+      (visita?['resultado'] as String?) ?? 'realizada';
+
+  bool _estaEmDia(Map<String, dynamic>? visita) {
+    final data = _dataDa(visita);
+    if (data == null) return false;
+    return DateTime.now().difference(data).inDays <= _diasLimiteVisita;
+  }
+
+  Color _corDoPino(Domicilio d, _Dados dados) {
+    if (dados.naoCadastrados.contains(d.id)) return corNaoCadastrada;
+    final ultima = dados.ultimasVisitas[d.id];
+    if (!_estaEmDia(ultima)) return corPendente;
+    return corResultado(_resultadoDa(ultima));
   }
 
   bool _passaNoFiltro(Domicilio d, _Dados dados) {
-    final emDia = _estaEmDia(dados.ultimasVisitas[d.id]);
+    final ultima = dados.ultimasVisitas[d.id];
+    final emDia = _estaEmDia(ultima);
     final marcadores = dados.marcadores[d.id] ?? <String>{};
 
     switch (_filtroAtual) {
@@ -180,12 +210,18 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
         return !emDia;
       case FiltroConsulta.visitados:
         return emDia;
+      case FiltroConsulta.ausentes:
+        return emDia && _resultadoDa(ultima) != 'realizada';
+      case FiltroConsulta.naoCadastradas:
+        return dados.naoCadastrados.contains(d.id);
       case FiltroConsulta.gestante:
         return marcadores.contains('gestante');
       case FiltroConsulta.crianca:
         return marcadores.contains('crianca');
       case FiltroConsulta.idoso:
         return marcadores.contains('idoso');
+      case FiltroConsulta.acamado:
+        return marcadores.contains('acamado');
       case FiltroConsulta.hipertensao:
         return marcadores.contains('hipertensao');
       case FiltroConsulta.diabetes:
@@ -246,17 +282,35 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
     );
   }
 
-  String _textoUltimaVisita(DateTime? ultima) {
-    if (ultima == null) return 'Nunca visitado';
-    final dias = DateTime.now().difference(ultima).inDays;
-    final data = '${ultima.day.toString().padLeft(2, '0')}/'
-        '${ultima.month.toString().padLeft(2, '0')}/${ultima.year}';
-    if (dias == 0) return 'Visitado hoje ($data)';
-    if (dias == 1) return 'Visitado ontem ($data)';
-    return 'Última visita há $dias dias ($data)';
+  String _textoUltimaVisita(Map<String, dynamic>? visita) {
+    final data = _dataDa(visita);
+    if (data == null) return 'Nunca visitado';
+
+    final dias = DateTime.now().difference(data).inDays;
+    final texto = '${data.day.toString().padLeft(2, '0')}/'
+        '${data.month.toString().padLeft(2, '0')}/${data.year}';
+
+    final quando = dias == 0
+        ? 'hoje'
+        : dias == 1
+            ? 'ontem'
+            : 'há $dias dias';
+
+    return '${rotulosResultado[_resultadoDa(visita)]} $quando ($texto)';
   }
 
-  void _abrirDomicilio(Domicilio d, DateTime? ultimaVisita) {
+  void _abrirDomicilio(
+      Domicilio d, Map<String, dynamic>? ultima, bool naoCadastrada) {
+    final emDia = _estaEmDia(ultima);
+    final resultado = _resultadoDa(ultima);
+    final fundo = ultima == null || !emDia
+        ? const Color(0xFFFFF3E0)
+        : resultado == 'realizada'
+            ? const Color(0xFFE8F5E9)
+            : resultado == 'ausente'
+                ? const Color(0xFFFFF8E1)
+                : const Color(0xFFFFEBEE);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -279,49 +333,122 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                           fontSize: 18, fontWeight: FontWeight.bold)),
                   Text(d.bairro, style: const TextStyle(color: Colors.black54)),
                   const SizedBox(height: 10),
+                  if (naoCadastrada)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3E5F5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.house_outlined, color: corNaoCadastrada),
+                          SizedBox(width: 8),
+                          Expanded(child: Text('Casa não cadastrada')),
+                        ],
+                      ),
+                    ),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: _estaEmDia(ultimaVisita)
-                          ? const Color(0xFFE8F5E9)
-                          : const Color(0xFFFFF3E0),
+                      color: fundo,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(_textoUltimaVisita(ultimaVisita)),
+                    child: Text(_textoUltimaVisita(ultima)),
                   ),
                 ],
               ),
             ),
             const Divider(height: 1),
             Expanded(
-              child: FutureBuilder<List<Familia>>(
-                future: ConsultaService.familiasDoDomicilio(d.id),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final familias = snapshot.data!;
-                  if (familias.isEmpty) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text('Nenhuma família cadastrada.'),
-                      ),
-                    );
-                  }
-                  return ListView(
-                    controller: scrollController,
-                    children: familias
-                        .map((f) => _CardFamiliaConsulta(familia: f))
-                        .toList(),
-                  );
-                },
-              ),
+              child: naoCadastrada
+                  ? _listaTentativas(d.id, scrollController)
+                  : FutureBuilder<List<Familia>>(
+                      future: ConsultaService.familiasDoDomicilio(d.id),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        final familias = snapshot.data!;
+                        if (familias.isEmpty) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text('Nenhuma família cadastrada.'),
+                            ),
+                          );
+                        }
+                        return ListView(
+                          controller: scrollController,
+                          children: familias
+                              .map((f) => _CardFamiliaConsulta(familia: f))
+                              .toList(),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _listaTentativas(String domicilioId, ScrollController controller) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: ConsultaService.tentativasDoDomicilio(domicilioId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final tentativas = snapshot.data!;
+        if (tentativas.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Nenhuma tentativa de visita registrada.'),
+            ),
+          );
+        }
+        return ListView(
+          controller: controller,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Tentativas de visita',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ...tentativas.map((v) {
+              final data = DateTime.parse(v['data_visita']);
+              final resultado = (v['resultado'] as String?) ?? 'ausente';
+              final obs = v['observacoes'] as String?;
+              final registrador = v['registrado_por']?['nome'];
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(iconeResultado(resultado),
+                      color: corResultado(resultado)),
+                  title: Text(
+                    '${data.day.toString().padLeft(2, '0')}/'
+                    '${data.month.toString().padLeft(2, '0')}/${data.year}',
+                  ),
+                  subtitle: Text([
+                    rotulosResultado[resultado] ?? resultado,
+                    if (registrador != null) 'Registrada por $registrador',
+                    if (obs != null && obs.isNotEmpty) obs,
+                  ].join('\n')),
+                  isThreeLine: true,
+                ),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 
@@ -459,12 +586,37 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                                   ),
                                   for (final d in visiveis)
                                     if (d.posX != null && d.posY != null)
-                                      _pino(d, dados.ultimasVisitas[d.id],
-                                          largura, altura),
+                                      _pino(d, dados, largura, altura),
                                 ],
                               );
                             },
                           ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 3),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _itemLegenda(corResultado('realizada'), 'Visitado'),
+                            _itemLegenda(corResultado('ausente'), 'Ausente'),
+                            _itemLegenda(corResultado('recusada'), 'Recusada'),
+                            _itemLegenda(corPendente, 'Pendente'),
+                            _itemLegenda(corNaoCadastrada, 'Não cadastrada'),
+                          ],
                         ),
                       ),
                     ),
@@ -507,10 +659,23 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
     );
   }
 
-  Widget _pino(
-      Domicilio d, DateTime? ultimaVisita, double largura, double altura) {
-    final emDia = _estaEmDia(ultimaVisita);
-    final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
+  Widget _itemLegenda(Color cor, String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_on, color: cor, size: 16),
+          const SizedBox(width: 4),
+          Text(texto, style: const TextStyle(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  Widget _pino(Domicilio d, _Dados dados, double largura, double altura) {
+    final cor = _corDoPino(d, dados);
+    final naoCadastrada = dados.naoCadastrados.contains(d.id);
     final destacado = d.id == _destacado;
 
     return Positioned(
@@ -522,7 +687,8 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
           scale: 1 / _escalaAtual,
           alignment: Alignment.bottomCenter,
           child: GestureDetector(
-            onTap: () => _abrirDomicilio(d, ultimaVisita),
+            onTap: () =>
+                _abrirDomicilio(d, dados.ultimasVisitas[d.id], naoCadastrada),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -539,7 +705,7 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                         style: TextStyle(fontSize: 9, color: Colors.white)),
                   ),
                 Icon(
-                  Icons.location_on,
+                  naoCadastrada ? Icons.help_center : Icons.location_on,
                   color: destacado ? Colors.amber[800] : cor,
                   size: destacado ? 46 : 36,
                 ),
@@ -619,6 +785,7 @@ class _CardFamiliaConsulta extends StatelessWidget {
                           subtitle: Text(
                             '${_idade(m.dataNascimento)} anos'
                             '${m.gestante ? ' • Gestante' : ''}'
+                            '${m.acamado ? ' • Acamado' : ''}'
                             '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
                           ),
                           trailing: const Icon(Icons.chevron_right),

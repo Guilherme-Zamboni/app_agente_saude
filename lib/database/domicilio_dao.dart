@@ -17,10 +17,11 @@ class DomicilioDao {
 
   Future<void> atualizar(Domicilio domicilio) async {
     final db = await dbHelper.database;
+    final dados = domicilio.toMap()..remove('criado_em');
     await db.update(
       'domicilio',
       {
-        ...domicilio.toMap(),
+        ...dados,
         'atualizado_em': DateTime.now().toIso8601String(),
         'sincronizado': 0,
       },
@@ -89,6 +90,19 @@ class DomicilioDao {
       whereArgs: [territorioId],
     );
     return resultado.map((d) => Domicilio.fromMap(d)).toList();
+  }
+
+  /// Domicílios ativos sem nenhuma família ativa (casas não cadastradas).
+  Future<Set<String>> idsNaoCadastrados(String territorioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery('''
+      SELECT d.id FROM domicilio d
+      WHERE d.territorio_id = ? AND d.ativo = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM familia f WHERE f.domicilio_id = d.id AND f.ativo = 1
+        )
+    ''', [territorioId]);
+    return resultado.map((r) => r['id'] as String).toSet();
   }
 
   Future<List<Domicilio>> buscarPorEndereco({

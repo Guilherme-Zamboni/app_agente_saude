@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/morador.dart';
 import '../models/visita.dart';
+import '../database/familia_dao.dart';
 import '../database/morador_dao.dart';
 import '../database/visita_dao.dart';
+import '../widgets/dialogo_visita.dart';
 import 'tela_cadastro_morador.dart';
+
+const int _diasLimiteVisita = 30;
 
 class TelaFichaMorador extends StatefulWidget {
   final Morador morador;
@@ -18,10 +22,10 @@ class TelaFichaMorador extends StatefulWidget {
 class _TelaFichaMoradorState extends State<TelaFichaMorador> {
   final _visitaDao = VisitaDao();
   final _moradorDao = MoradorDao();
+  final _familiaDao = FamiliaDao();
 
   late Morador _morador;
   late Future<List<Visita>> _visitasFuture;
-  late Future<int?> _diasDesdeUltimaVisitaFuture;
 
   @override
   void initState() {
@@ -35,10 +39,6 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
       moradorId: _morador.id,
       familiaId: _morador.familiaId,
     );
-    _diasDesdeUltimaVisitaFuture = _visitaDao.diasDesdeUltimaVisitaMorador(
-      moradorId: _morador.id,
-      familiaId: _morador.familiaId,
-    );
   }
 
   int _calcularIdade(DateTime nascimento) {
@@ -49,6 +49,14 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
       idade--;
     }
     return idade;
+  }
+
+  String _formatarData(DateTime data) {
+    return '${data.day.toString().padLeft(2, '0')}/'
+        '${data.month.toString().padLeft(2, '0')}/'
+        '${data.year} às '
+        '${data.hour.toString().padLeft(2, '0')}:'
+        '${data.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _editarMorador() async {
@@ -68,60 +76,32 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
   }
 
   Future<void> _registrarVisitaIndividual() async {
-    final observacoesController = TextEditingController();
-
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Registrar visita individual'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Use isto para um acompanhamento específico deste morador, '
-              'fora da visita geral feita à família.',
-              style: TextStyle(fontSize: 13, color: Colors.black54),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: observacoesController,
-              autofocus: true,
-              maxLines: 4,
-              style: const TextStyle(fontSize: 16),
-              decoration: const InputDecoration(
-                labelText: 'Observações (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Registrar'),
-          ),
-        ],
-      ),
+    final dados = await mostrarDialogoVisita(
+      context,
+      titulo: 'Registrar visita individual',
+      subtitulo: 'Acompanhamento específico deste morador, '
+          'fora da visita geral à família.',
     );
+    if (dados == null) return;
 
-    if (confirmar != true) return;
+    final familia = await _familiaDao.buscarPorId(_morador.familiaId);
+    if (familia == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Família do morador não encontrada')),
+      );
+      return;
+    }
 
-    final visita = Visita(
+    await _visitaDao.inserir(Visita(
       id: const Uuid().v4(),
+      domicilioId: familia.domicilioId,
       familiaId: _morador.familiaId,
-      moradorId: _morador.id, // visita extra, específica deste morador
+      moradorId: _morador.id,
       dataVisita: DateTime.now(),
-      observacoes: observacoesController.text.trim().isEmpty
-          ? null
-          : observacoesController.text.trim(),
-    );
-
-    await _visitaDao.inserir(visita);
+      resultado: dados.resultado,
+      observacoes: dados.observacoes,
+    ));
 
     if (!mounted) return;
     setState(_carregar);
@@ -131,87 +111,27 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
   }
 
   Future<void> _editarVisita(Visita visita) async {
-    final observacoesController = TextEditingController(text: visita.observacoes ?? '');
-    DateTime dataSelecionada = visita.dataVisita;
-
-    final salvar = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text(visita.individual ? 'Editar visita individual' : 'Editar visita da família'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today),
-                  title: Text(
-                    '${dataSelecionada.day.toString().padLeft(2, '0')}/'
-                    '${dataSelecionada.month.toString().padLeft(2, '0')}/'
-                    '${dataSelecionada.year}',
-                  ),
-                  onTap: () async {
-                    final novaData = await showDatePicker(
-                      context: context,
-                      initialDate: dataSelecionada,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime.now(),
-                    );
-                    if (novaData != null) {
-                      setDialogState(() {
-                        dataSelecionada = DateTime(
-                          novaData.year,
-                          novaData.month,
-                          novaData.day,
-                          dataSelecionada.hour,
-                          dataSelecionada.minute,
-                        );
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: observacoesController,
-                  maxLines: 4,
-                  style: const TextStyle(fontSize: 16),
-                  decoration: const InputDecoration(
-                    labelText: 'Observações (opcional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Salvar'),
-              ),
-            ],
-          );
-        },
-      ),
+    final dados = await mostrarDialogoVisita(
+      context,
+      titulo: visita.individual
+          ? 'Editar visita individual'
+          : 'Editar visita da família',
+      resultadoInicial: visita.resultado,
+      observacoesIniciais: visita.observacoes,
+      dataInicial: visita.dataVisita,
+      permitirEditarData: true,
     );
+    if (dados == null) return;
 
-    if (salvar != true) return;
-
-    final visitaAtualizada = Visita(
+    await _visitaDao.atualizar(Visita(
       id: visita.id,
+      domicilioId: visita.domicilioId,
       familiaId: visita.familiaId,
       moradorId: visita.moradorId,
-      dataVisita: dataSelecionada,
-      observacoes: observacoesController.text.trim().isEmpty
-          ? null
-          : observacoesController.text.trim(),
-    );
-
-    await _visitaDao.atualizar(visitaAtualizada);
+      dataVisita: dados.data,
+      resultado: dados.resultado,
+      observacoes: dados.observacoes,
+    ));
 
     if (!mounted) return;
     setState(_carregar);
@@ -229,7 +149,7 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
           visita.individual
               ? 'Deseja excluir este registro de visita individual?'
               : 'Deseja excluir este registro de visita geral da família? '
-                'Isso afeta o indicador de todos os moradores dela.',
+                  'Isso afeta o indicador de todos os moradores dela.',
         ),
         actions: [
           TextButton(
@@ -252,14 +172,6 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
     setState(_carregar);
   }
 
-  String _formatarData(DateTime data) {
-    return '${data.day.toString().padLeft(2, '0')}/'
-        '${data.month.toString().padLeft(2, '0')}/'
-        '${data.year} às '
-        '${data.hour.toString().padLeft(2, '0')}:'
-        '${data.minute.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final idade = _calcularIdade(_morador.dataNascimento);
@@ -280,160 +192,184 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
         icon: const Icon(Icons.add_task),
         label: const Text('Visita individual'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _linhaInfo('Nome', _morador.nome),
-                  _linhaInfo('Nome da mãe', _morador.nomeDaMae),
-                  _linhaInfo('Idade', '$idade anos'),
-                  if (_morador.cpf != null) _linhaInfo('CPF', _morador.cpf!),
-                  if (_morador.gestante)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Chip(
-                        label: Text('Gestante'),
-                        backgroundColor: Color(0xFFFCE4EC),
-                      ),
-                    ),
-                  if (_morador.comorbidades.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    const Text('Comorbidades',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 6,
-                      children: _morador.comorbidades
-                          .map((c) => Chip(label: Text(c)))
-                          .toList(),
-                    ),
-                  ],
-                  if (_morador.anotacoesAgente != null &&
-                      _morador.anotacoesAgente!.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    const Text('Anotações',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(_morador.anotacoesAgente!),
-                  ],
-                ],
-              ),
-            ),
-          ),
+      body: FutureBuilder<List<Visita>>(
+        future: _visitasFuture,
+        builder: (context, snapshot) {
+          final visitas = snapshot.data;
 
-          const SizedBox(height: 16),
-
-          FutureBuilder<int?>(
-            future: _diasDesdeUltimaVisitaFuture,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
-                return const SizedBox.shrink();
-              }
-
-              final dias = snapshot.data;
-              final semVisita = dias == null;
-              final atrasado = semVisita || dias > 30;
-
-              return Card(
-                color: atrasado ? const Color(0xFFFFF3E0) : const Color(0xFFE8F5E9),
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+            children: [
+              Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        atrasado ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-                        color: atrasado ? Colors.orange[800] : Colors.green[700],
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          semVisita
-                              ? 'Nenhuma visita registrada ainda (família ou individual)'
-                              : 'Última visita há $dias dia(s)',
-                          style: const TextStyle(fontSize: 16),
+                      _linhaInfo('Nome', _morador.nome),
+                      _linhaInfo('Nome da mãe', _morador.nomeDaMae),
+                      _linhaInfo('Idade', '$idade anos'),
+                      if (_morador.cpf != null)
+                        _linhaInfo('CPF', _morador.cpf!),
+                      if (_morador.gestante || _morador.acamado)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Wrap(
+                            spacing: 6,
+                            children: [
+                              if (_morador.gestante)
+                                const Chip(
+                                  label: Text('Gestante'),
+                                  backgroundColor: Color(0xFFFCE4EC),
+                                ),
+                              if (_morador.acamado)
+                                const Chip(
+                                  avatar: Icon(Icons.bed, size: 18),
+                                  label: Text('Acamado'),
+                                  backgroundColor: Color(0xFFEDE7F6),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
+                      if (_morador.comorbidades.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        const Text('Comorbidades',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          children: _morador.comorbidades
+                              .map((c) => Chip(
+                                    label: Text(comorbidadesLabels[c] ?? c),
+                                  ))
+                              .toList(),
+                        ),
+                      ],
+                      if (_morador.anotacoesAgente != null &&
+                          _morador.anotacoesAgente!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text('Anotações',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(_morador.anotacoesAgente!),
+                      ],
                     ],
                   ),
                 ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 16),
-
-          const Text('Histórico de visitas',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const Text(
-            'Inclui visitas gerais à família e acompanhamentos individuais deste morador.',
-            style: TextStyle(fontSize: 13, color: Colors.black54),
-          ),
-          const SizedBox(height: 8),
-
-          FutureBuilder<List<Visita>>(
-            future: _visitasFuture,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Padding(
+              ),
+              const SizedBox(height: 16),
+              if (visitas != null) _indicadorUltimaVisita(visitas),
+              const SizedBox(height: 16),
+              const Text('Histórico de visitas',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text(
+                'Inclui visitas gerais à família e acompanhamentos individuais '
+                'deste morador.',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 8),
+              if (visitas == null)
+                const Padding(
                   padding: EdgeInsets.all(16),
                   child: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              final visitas = snapshot.data!;
-
-              if (visitas.isEmpty) {
-                return const Padding(
+                )
+              else if (visitas.isEmpty)
+                const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    'Nenhuma visita registrada ainda.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                );
-              }
+                  child: Text('Nenhuma visita registrada ainda.',
+                      style: TextStyle(color: Colors.black54)),
+                )
+              else
+                ...visitas.map(_itemVisita),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-              return Column(
-                children: visitas.map((v) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: Icon(
-                        v.individual ? Icons.person_pin_circle : Icons.home_outlined,
-                        color: Colors.teal,
-                      ),
-                      title: Text(_formatarData(v.dataVisita)),
-                      subtitle: Text(
-                        '${v.individual ? "Visita individual" : "Visita geral da família"}'
-                        '${v.observacoes != null && v.observacoes!.isNotEmpty ? "\n${v.observacoes}" : ""}',
-                      ),
-                      isThreeLine: v.observacoes != null && v.observacoes!.isNotEmpty,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, size: 20),
-                            tooltip: 'Editar visita',
-                            onPressed: () => _editarVisita(v),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 20),
-                            tooltip: 'Excluir visita',
-                            onPressed: () => _excluirVisita(v),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
+  Widget _indicadorUltimaVisita(List<Visita> visitas) {
+    String texto;
+    Color fundo;
+    Color corIcone;
+    IconData icone;
+
+    if (visitas.isEmpty) {
+      texto = 'Nenhuma visita registrada ainda (família ou individual)';
+      fundo = const Color(0xFFFFF3E0);
+      corIcone = Colors.orange.shade800;
+      icone = Icons.warning_amber_rounded;
+    } else {
+      final ultima = visitas.first;
+      final dias = DateTime.now().difference(ultima.dataVisita).inDays;
+
+      if (dias > _diasLimiteVisita) {
+        texto = 'Última visita há $dias dia(s) — visita em atraso';
+        fundo = const Color(0xFFFFF3E0);
+        corIcone = Colors.orange.shade800;
+        icone = Icons.warning_amber_rounded;
+      } else if (ultima.resultado == 'ausente') {
+        texto = 'Última visita há $dias dia(s) — moradores ausentes';
+        fundo = const Color(0xFFFFF8E1);
+        corIcone = corResultado('ausente');
+        icone = iconeResultado('ausente');
+      } else if (ultima.resultado == 'recusada') {
+        texto = 'Última visita há $dias dia(s) — visita recusada';
+        fundo = const Color(0xFFFFEBEE);
+        corIcone = corResultado('recusada');
+        icone = iconeResultado('recusada');
+      } else {
+        texto = 'Última visita há $dias dia(s)';
+        fundo = const Color(0xFFE8F5E9);
+        corIcone = corResultado('realizada');
+        icone = iconeResultado('realizada');
+      }
+    }
+
+    return Card(
+      color: fundo,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icone, color: corIcone),
+            const SizedBox(width: 12),
+            Expanded(child: Text(texto, style: const TextStyle(fontSize: 16))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _itemVisita(Visita v) {
+    final temObs = v.observacoes != null && v.observacoes!.isNotEmpty;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(iconeResultado(v.resultado),
+            color: corResultado(v.resultado)),
+        title: Text(_formatarData(v.dataVisita)),
+        subtitle: Text(
+          '${v.individual ? "Individual" : "Geral da família"} • '
+          '${rotulosResultado[v.resultado]}'
+          '${temObs ? "\n${v.observacoes}" : ""}',
+        ),
+        isThreeLine: temObs,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              tooltip: 'Editar visita',
+              onPressed: () => _editarVisita(v),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              tooltip: 'Excluir visita',
+              onPressed: () => _excluirVisita(v),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -447,7 +383,8 @@ class _TelaFichaMoradorState extends State<TelaFichaMorador> {
           SizedBox(
             width: 110,
             child: Text(rotulo,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           ),
           Expanded(child: Text(valor, style: const TextStyle(fontSize: 15))),
         ],

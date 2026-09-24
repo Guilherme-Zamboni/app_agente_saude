@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/consulta_service.dart';
+import '../widgets/dialogo_visita.dart';
+import 'tela_cadastro_morador.dart' show comorbidadesLabels;
+import '../models/visita.dart';
 
 class TelaFichaConsulta extends StatefulWidget {
   final String moradorId;
@@ -61,7 +64,7 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
             child: SizedBox(
               width: double.infinity,
               child: Text('Somente leitura',
-                  style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
             ),
           ),
         ),
@@ -85,6 +88,8 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
               : comorbidadesTexto.split(',');
           final familia = m['familia'];
           final domicilio = familia?['domicilio'];
+          final gestante = m['gestante'] == true;
+          final acamado = m['acamado'] == true;
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -104,12 +109,24 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
                       if (domicilio != null)
                         _linha('Endereço',
                             '${domicilio['rua']}, ${domicilio['numero']} - ${domicilio['bairro']}'),
-                      if (m['gestante'] == true)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Chip(
-                            label: Text('Gestante'),
-                            backgroundColor: Color(0xFFFCE4EC),
+                      if (gestante || acamado)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 6,
+                            children: [
+                              if (gestante)
+                                const Chip(
+                                  label: Text('Gestante'),
+                                  backgroundColor: Color(0xFFFCE4EC),
+                                ),
+                              if (acamado)
+                                const Chip(
+                                  avatar: Icon(Icons.bed, size: 18),
+                                  label: Text('Acamado'),
+                                  backgroundColor: Color(0xFFEDE7F6),
+                                ),
+                            ],
                           ),
                         ),
                       if (comorbidades.isNotEmpty) ...[
@@ -120,7 +137,8 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
                         Wrap(
                           spacing: 6,
                           children: comorbidades
-                              .map((c) => Chip(label: Text(c)))
+                              .map((c) =>
+                                  Chip(label: Text(comorbidadesLabels[c] ?? c)))
                               .toList(),
                         ),
                       ],
@@ -205,6 +223,8 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
                     children: visitas.map((v) {
                       final individual = v['morador_id'] != null;
                       final data = DateTime.parse(v['data_visita']);
+                      final resultado =
+                          (v['resultado'] as String?) ?? 'realizada';
                       final obs = v['observacoes'] as String?;
                       final registrador = v['registrado_por']?['nome'];
 
@@ -217,13 +237,8 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
                             children: [
                               Row(
                                 children: [
-                                  Icon(
-                                    individual
-                                        ? Icons.person_pin_circle
-                                        : Icons.home_outlined,
-                                    color: Colors.teal,
-                                    size: 20,
-                                  ),
+                                  Icon(iconeResultado(resultado),
+                                      color: corResultado(resultado), size: 20),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -236,9 +251,8 @@ class _TelaFichaConsultaState extends State<TelaFichaConsulta> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                individual
-                                    ? 'Visita individual'
-                                    : 'Visita geral da família',
+                                '${individual ? "Visita individual" : "Visita geral da família"}'
+                                ' • ${rotulosResultado[resultado] ?? resultado}',
                                 style: const TextStyle(
                                     fontSize: 13, color: Colors.black54),
                               ),

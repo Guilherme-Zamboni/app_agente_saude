@@ -7,9 +7,15 @@ import '../models/visita.dart';
 import '../database/familia_dao.dart';
 import '../database/morador_dao.dart';
 import '../database/visita_dao.dart';
+import '../widgets/dialogo_visita.dart';
 import 'tela_cadastro_familia.dart';
 import 'tela_cadastro_morador.dart';
 import 'tela_ficha_morador.dart';
+
+String _formatarData(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/'
+    '${d.year} às ${d.hour.toString().padLeft(2, '0')}:'
+    '${d.minute.toString().padLeft(2, '0')}';
 
 class TelaDetalheDomicilio extends StatefulWidget {
   final Domicilio domicilio;
@@ -22,7 +28,9 @@ class TelaDetalheDomicilio extends StatefulWidget {
 
 class _TelaDetalheDomicilioState extends State<TelaDetalheDomicilio> {
   final _familiaDao = FamiliaDao();
+  final _visitaDao = VisitaDao();
   late Future<List<Familia>> _familiasFuture;
+  late Future<List<Visita>> _tentativasFuture;
 
   @override
   void initState() {
@@ -32,6 +40,8 @@ class _TelaDetalheDomicilioState extends State<TelaDetalheDomicilio> {
 
   void _carregar() {
     _familiasFuture = _familiaDao.listarPorDomicilio(widget.domicilio.id);
+    _tentativasFuture =
+        _visitaDao.listarTentativasDoDomicilio(widget.domicilio.id);
   }
 
   Future<void> _adicionarFamilia() async {
@@ -85,14 +95,61 @@ class _TelaDetalheDomicilioState extends State<TelaDetalheDomicilio> {
     }
   }
 
+  Future<void> _registrarTentativa() async {
+    final dados = await mostrarDialogoVisita(
+      context,
+      titulo: 'Registrar tentativa de visita',
+      subtitulo: 'Esta casa ainda não tem família cadastrada.',
+      permitirRealizada: false,
+      resultadoInicial: 'ausente',
+    );
+    if (dados == null) return;
+
+    await _visitaDao.inserir(Visita(
+      id: const Uuid().v4(),
+      domicilioId: widget.domicilio.id,
+      dataVisita: DateTime.now(),
+      resultado: dados.resultado,
+      observacoes: dados.observacoes,
+    ));
+
+    if (!mounted) return;
+    setState(_carregar);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Tentativa de visita registrada!')),
+    );
+  }
+
+  Future<void> _excluirTentativa(Visita visita) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Excluir tentativa'),
+        content: const Text('Deseja excluir este registro?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    await _visitaDao.inativar(visita.id);
+    if (mounted) setState(_carregar);
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.domicilio;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${d.rua}, ${d.numero}'),
-      ),
+      appBar: AppBar(title: Text('${d.rua}, ${d.numero}')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _adicionarFamilia,
         icon: const Icon(Icons.group_add),
@@ -117,21 +174,10 @@ class _TelaDetalheDomicilioState extends State<TelaDetalheDomicilio> {
 
                 final familias = snapshot.data!;
 
-                if (familias.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Nenhuma família cadastrada neste domicílio ainda.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Colors.black54),
-                      ),
-                    ),
-                  );
-                }
+                if (familias.isEmpty) return _secaoNaoCadastrada();
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 90),
                   itemCount: familias.length,
                   itemBuilder: (context, index) {
                     final familia = familias[index];
@@ -148,6 +194,92 @@ class _TelaDetalheDomicilioState extends State<TelaDetalheDomicilio> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _secaoNaoCadastrada() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+      children: [
+        Card(
+          color: const Color(0xFFF3E5F5),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.house_outlined, color: Colors.purple),
+                    SizedBox(width: 8),
+                    Text('Casa não cadastrada',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Nenhuma família cadastrada ainda. Registre as tentativas de '
+                  'visita e, quando encontrar os moradores, toque em '
+                  '"Nova família".',
+                  style: TextStyle(fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _registrarTentativa,
+                    icon: const Icon(Icons.add_task),
+                    label: const Text('Registrar tentativa de visita'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text('Tentativas registradas',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        FutureBuilder<List<Visita>>(
+          future: _tentativasFuture,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final tentativas = snapshot.data!;
+            if (tentativas.isEmpty) {
+              return const Text('Nenhuma tentativa registrada ainda.',
+                  style: TextStyle(color: Colors.black54));
+            }
+            return Column(
+              children: tentativas.map((v) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(iconeResultado(v.resultado),
+                        color: corResultado(v.resultado)),
+                    title: Text(_formatarData(v.dataVisita)),
+                    subtitle: Text(
+                      '${rotulosResultado[v.resultado]}'
+                      '${v.observacoes != null ? '\n${v.observacoes}' : ''}',
+                    ),
+                    isThreeLine: v.observacoes != null,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      tooltip: 'Excluir',
+                      onPressed: () => _excluirTentativa(v),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -172,7 +304,7 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
   final _moradorDao = MoradorDao();
   final _visitaDao = VisitaDao();
   late Future<List<Morador>> _moradoresFuture;
-  late Future<DateTime?> _ultimaVisitaFamiliaFuture;
+  late Future<Visita?> _ultimaVisitaFuture;
 
   @override
   void initState() {
@@ -182,12 +314,7 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
 
   void _carregarTudo() {
     _moradoresFuture = _moradorDao.listarPorFamilia(widget.familia.id);
-    _ultimaVisitaFamiliaFuture =
-        _visitaDao.dataUltimaVisitaFamilia(widget.familia.id);
-  }
-
-  void _carregarMoradores() {
-    _moradoresFuture = _moradorDao.listarPorFamilia(widget.familia.id);
+    _ultimaVisitaFuture = _visitaDao.ultimaVisitaFamilia(widget.familia.id);
   }
 
   int _calcularIdade(DateTime nascimento) {
@@ -201,48 +328,20 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
   }
 
   Future<void> _registrarVisitaFamilia() async {
-    final observacoesController = TextEditingController();
-
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Registrar visita à família'),
-        content: TextField(
-          controller: observacoesController,
-          autofocus: true,
-          maxLines: 4,
-          style: const TextStyle(fontSize: 16),
-          decoration: const InputDecoration(
-            labelText: 'Observações (opcional)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Registrar'),
-          ),
-        ],
-      ),
+    final dados = await mostrarDialogoVisita(
+      context,
+      titulo: 'Registrar visita à família',
     );
+    if (dados == null) return;
 
-    if (confirmar != true) return;
-
-    final visita = Visita(
+    await _visitaDao.inserir(Visita(
       id: const Uuid().v4(),
+      domicilioId: widget.familia.domicilioId,
       familiaId: widget.familia.id,
-      moradorId: null,
       dataVisita: DateTime.now(),
-      observacoes: observacoesController.text.trim().isEmpty
-          ? null
-          : observacoesController.text.trim(),
-    );
-
-    await _visitaDao.inserir(visita);
+      resultado: dados.resultado,
+      observacoes: dados.observacoes,
+    ));
 
     if (!mounted) return;
     setState(_carregarTudo);
@@ -255,12 +354,11 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => TelaCadastroMorador(
-          familiaExistenteId: widget.familia.id,
-        ),
+        builder: (_) =>
+            TelaCadastroMorador(familiaExistenteId: widget.familia.id),
       ),
     );
-    setState(_carregarMoradores);
+    setState(_carregarTudo);
   }
 
   Future<void> _abrirFicha(Morador m) async {
@@ -304,17 +402,24 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
         leading: const Icon(Icons.family_restroom, color: Colors.teal),
         title: const Text('Família',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: FutureBuilder<DateTime?>(
-          future: _ultimaVisitaFamiliaFuture,
+        subtitle: FutureBuilder<Visita?>(
+          future: _ultimaVisitaFuture,
           builder: (context, snapshot) {
-            final texto = widget.familia.observacoes != null
-                ? '${widget.familia.observacoes}\n'
-                : '';
-            if (!snapshot.hasData || snapshot.data == null) {
-              return Text('$texto Nenhuma visita geral registrada ainda');
+            final linhas = <String>[];
+            final obs = widget.familia.observacoes;
+            if (obs != null && obs.isNotEmpty) linhas.add(obs);
+
+            if (snapshot.connectionState == ConnectionState.done) {
+              final v = snapshot.data;
+              if (v == null) {
+                linhas.add('Nenhuma visita geral registrada ainda');
+              } else {
+                final dias = DateTime.now().difference(v.dataVisita).inDays;
+                linhas.add('Última visita há $dias dia(s) • '
+                    '${rotulosResultado[v.resultado]}');
+              }
             }
-            final dias = DateTime.now().difference(snapshot.data!).inDays;
-            return Text('$texto Última visita à família há $dias dia(s)');
+            return Text(linhas.join('\n'));
           },
         ),
         trailing: Row(
@@ -366,6 +471,7 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
                         subtitle: Text(
                           '$idade anos'
                           '${m.gestante ? ' • Gestante' : ''}'
+                          '${m.acamado ? ' • Acamado' : ''}'
                           '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
                         ),
                         onTap: () => _abrirFicha(m),

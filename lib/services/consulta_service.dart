@@ -36,8 +36,8 @@ class ConsultaService {
     return resultado.map<Morador>((m) => Morador.fromMap(m)).toList();
   }
 
-  /// Última visita de cada domicílio do território, para colorir os pinos.
-  static Future<Map<String, DateTime>> ultimasVisitas(
+  /// Visita mais recente de cada domicílio, com o resultado.
+  static Future<Map<String, Map<String, dynamic>>> ultimaVisitaPorDomicilio(
       String territorioId) async {
     final domicilios = await _cliente
         .from('domicilio')
@@ -48,36 +48,55 @@ class ConsultaService {
     final ids = domicilios.map<String>((d) => d['id'] as String).toList();
     if (ids.isEmpty) return {};
 
-    final familias = await _cliente
-        .from('familia')
-        .select('id, domicilio_id')
-        .inFilter('domicilio_id', ids)
-        .eq('ativo', true);
-
-    if (familias.isEmpty) return {};
-
-    final mapaFamiliaDomicilio = <String, String>{};
-    for (final f in familias) {
-      mapaFamiliaDomicilio[f['id'] as String] = f['domicilio_id'] as String;
-    }
-
     final visitas = await _cliente
         .from('visita')
-        .select('familia_id, data_visita')
-        .inFilter('familia_id', mapaFamiliaDomicilio.keys.toList())
-        .eq('ativo', true);
+        .select('domicilio_id, data_visita, resultado')
+        .inFilter('domicilio_id', ids)
+        .eq('ativo', true)
+        .order('data_visita', ascending: false);
 
-    final resultado = <String, DateTime>{};
+    final resultado = <String, Map<String, dynamic>>{};
     for (final v in visitas) {
-      final domicilioId = mapaFamiliaDomicilio[v['familia_id']];
-      if (domicilioId == null) continue;
-      final data = DateTime.parse(v['data_visita']);
-      final atual = resultado[domicilioId];
-      if (atual == null || data.isAfter(atual)) {
-        resultado[domicilioId] = data;
-      }
+      resultado.putIfAbsent(
+          v['domicilio_id'] as String, () => Map<String, dynamic>.from(v));
     }
     return resultado;
+  }
+
+  /// Domicílios sem nenhuma família ativa (casas não cadastradas).
+  static Future<Set<String>> idsNaoCadastrados(String territorioId) async {
+    final domicilios = await _cliente
+        .from('domicilio')
+        .select('id')
+        .eq('territorio_id', territorioId)
+        .eq('ativo', true);
+
+    final ids = domicilios.map<String>((d) => d['id'] as String).toSet();
+    if (ids.isEmpty) return {};
+
+    final familias = await _cliente
+        .from('familia')
+        .select('domicilio_id')
+        .inFilter('domicilio_id', ids.toList())
+        .eq('ativo', true);
+
+    final comFamilia =
+        familias.map<String>((f) => f['domicilio_id'] as String).toSet();
+
+    return ids.difference(comFamilia);
+  }
+
+  /// Tentativas de visita registradas em uma casa sem família.
+  static Future<List<Map<String, dynamic>>> tentativasDoDomicilio(
+      String domicilioId) async {
+    final resultado = await _cliente
+        .from('visita')
+        .select('*, registrado_por:perfil!visita_registrado_por_fkey(nome)')
+        .eq('domicilio_id', domicilioId)
+        .isFilter('familia_id', null)
+        .eq('ativo', true)
+        .order('data_visita', ascending: false);
+    return List<Map<String, dynamic>>.from(resultado);
   }
 
   /// Marcadores de saúde por domicílio, para os filtros do mapa.
@@ -107,7 +126,7 @@ class ConsultaService {
 
     final moradores = await _cliente
         .from('morador')
-        .select('familia_id, comorbidades, gestante, data_nascimento')
+        .select('familia_id, comorbidades, gestante, acamado, data_nascimento')
         .inFilter('familia_id', mapaFamiliaDomicilio.keys.toList())
         .eq('ativo', true);
 
@@ -126,16 +145,15 @@ class ConsultaService {
       }
 
       if (m['gestante'] == true) marcadores.add('gestante');
+      if (m['acamado'] == true) marcadores.add('acamado');
 
       final nascimento = DateTime.parse(m['data_nascimento']);
-      final idade = agora.year -
-          nascimento.year -
-          ((agora.month < nascimento.month ||
-                  (agora.month == nascimento.month &&
-                      agora.day < nascimento.day))
-              ? 1
-              : 0);
-      if (idade <= 4) marcadores.add('crianca');
+      int idade = agora.year - nascimento.year;
+      if (agora.month < nascimento.month ||
+          (agora.month == nascimento.month && agora.day < nascimento.day)) {
+        idade--;
+      }
+      if (idade < 2) marcadores.add('crianca');
       if (idade >= 60) marcadores.add('idoso');
     }
 

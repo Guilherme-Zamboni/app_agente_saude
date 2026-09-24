@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
 import '../models/domicilio.dart';
+import '../models/visita.dart';
 import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
 import '../database/morador_dao.dart';
 import '../services/auth_service.dart';
 import '../widgets/barra_sincronizacao.dart';
+import '../widgets/dialogo_visita.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
@@ -14,13 +16,19 @@ import 'tela_selecionar_local_mapa.dart';
 
 const int diasLimiteVisita = 30;
 
+const Color corPendente = Color(0xFF546E7A);
+const Color corNaoCadastrada = Color(0xFF8E24AA);
+
 enum FiltroMapa {
   todos,
   pendentes,
   visitados,
+  ausentes,
+  naoCadastradas,
   gestante,
   crianca,
   idoso,
+  acamado,
   hipertensao,
   diabetes,
 }
@@ -29,9 +37,12 @@ const Map<FiltroMapa, String> rotulosFiltro = {
   FiltroMapa.todos: 'Todos',
   FiltroMapa.pendentes: 'Pendentes de visita',
   FiltroMapa.visitados: 'Visitados (30 dias)',
+  FiltroMapa.ausentes: 'Ausentes ou recusadas',
+  FiltroMapa.naoCadastradas: 'Casas não cadastradas',
   FiltroMapa.gestante: 'Com gestante',
-  FiltroMapa.crianca: 'Com criança (0-4)',
+  FiltroMapa.crianca: 'Com criança (menor de 2 anos)',
   FiltroMapa.idoso: 'Com idoso (60+)',
+  FiltroMapa.acamado: 'Com acamado',
   FiltroMapa.hipertensao: 'Com hipertensão',
   FiltroMapa.diabetes: 'Com diabetes',
 };
@@ -54,10 +65,12 @@ class TelaMapaTerritorio extends StatefulWidget {
 
 class _DadosMapa {
   final List<Domicilio> domicilios;
-  final Map<String, DateTime> ultimasVisitas;
+  final Map<String, Visita> ultimasVisitas;
   final Map<String, Set<String>> marcadores;
+  final Set<String> naoCadastrados;
 
-  _DadosMapa(this.domicilios, this.ultimasVisitas, this.marcadores);
+  _DadosMapa(this.domicilios, this.ultimasVisitas, this.marcadores,
+      this.naoCadastrados);
 }
 
 class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
@@ -102,7 +115,6 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     _dadosFuture = _buscarDados();
   }
 
-  /// Recarrega os dados do mapa e pede à barra que atualize o contador.
   void _recarregarTudo() {
     setState(_carregar);
     _chaveSync.currentState?.atualizarStatusExterno();
@@ -112,10 +124,12 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     final domicilios =
         await _domicilioDao.listarPorTerritorio(widget.territorioId);
     final visitas =
-        await _visitaDao.ultimasVisitasPorTerritorio(widget.territorioId);
+        await _visitaDao.ultimaVisitaPorDomicilio(widget.territorioId);
     final marcadores =
         await _moradorDao.marcadoresPorDomicilio(widget.territorioId);
-    return _DadosMapa(domicilios, visitas, marcadores);
+    final naoCadastrados =
+        await _domicilioDao.idsNaoCadastrados(widget.territorioId);
+    return _DadosMapa(domicilios, visitas, marcadores, naoCadastrados);
   }
 
   Future<void> _focarDestacado() async {
@@ -150,13 +164,25 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     setState(() => _controladorZoom.value = matriz);
   }
 
-  bool _estaEmDia(DateTime? ultimaVisita) {
-    if (ultimaVisita == null) return false;
-    return DateTime.now().difference(ultimaVisita).inDays <= diasLimiteVisita;
+  bool _estaEmDia(Visita? ultima) {
+    if (ultima == null) return false;
+    return DateTime.now().difference(ultima.dataVisita).inDays <=
+        diasLimiteVisita;
+  }
+
+  /// Cor do pino conforme a situação do domicílio.
+  Color _corDoPino(Domicilio d, _DadosMapa dados) {
+    if (dados.naoCadastrados.contains(d.id)) return corNaoCadastrada;
+
+    final ultima = dados.ultimasVisitas[d.id];
+    if (!_estaEmDia(ultima)) return corPendente;
+
+    return corResultado(ultima!.resultado);
   }
 
   bool _passaNoFiltro(Domicilio d, _DadosMapa dados) {
-    final emDia = _estaEmDia(dados.ultimasVisitas[d.id]);
+    final ultima = dados.ultimasVisitas[d.id];
+    final emDia = _estaEmDia(ultima);
     final marcadores = dados.marcadores[d.id] ?? <String>{};
 
     switch (_filtroAtual) {
@@ -166,12 +192,18 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         return !emDia;
       case FiltroMapa.visitados:
         return emDia;
+      case FiltroMapa.ausentes:
+        return emDia && ultima!.resultado != 'realizada';
+      case FiltroMapa.naoCadastradas:
+        return dados.naoCadastrados.contains(d.id);
       case FiltroMapa.gestante:
         return marcadores.contains('gestante');
       case FiltroMapa.crianca:
         return marcadores.contains('crianca');
       case FiltroMapa.idoso:
         return marcadores.contains('idoso');
+      case FiltroMapa.acamado:
+        return marcadores.contains('acamado');
       case FiltroMapa.hipertensao:
         return marcadores.contains('hipertensao');
       case FiltroMapa.diabetes:
@@ -355,20 +387,35 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     }
   }
 
-  String _textoUltimaVisita(DateTime? ultimaVisita) {
-    if (ultimaVisita == null) return 'Nunca visitado';
+  String _textoUltimaVisita(Visita? ultima) {
+    if (ultima == null) return 'Nunca visitado';
 
-    final dias = DateTime.now().difference(ultimaVisita).inDays;
-    final dataFormatada = '${ultimaVisita.day.toString().padLeft(2, '0')}/'
-        '${ultimaVisita.month.toString().padLeft(2, '0')}/${ultimaVisita.year}';
+    final dias = DateTime.now().difference(ultima.dataVisita).inDays;
+    final data = '${ultima.dataVisita.day.toString().padLeft(2, '0')}/'
+        '${ultima.dataVisita.month.toString().padLeft(2, '0')}/'
+        '${ultima.dataVisita.year}';
 
-    if (dias == 0) return 'Visitado hoje ($dataFormatada)';
-    if (dias == 1) return 'Visitado ontem ($dataFormatada)';
-    return 'Última visita há $dias dias ($dataFormatada)';
+    final quando = dias == 0
+        ? 'hoje'
+        : dias == 1
+            ? 'ontem'
+            : 'há $dias dias';
+
+    return '${rotulosResultado[ultima.resultado]} $quando ($data)';
   }
 
-  void _abrirMenuCasa(Domicilio d, DateTime? ultimaVisita) {
-    final emDia = _estaEmDia(ultimaVisita);
+  void _abrirMenuCasa(Domicilio d, Visita? ultima, bool naoCadastrada) {
+    final emDia = _estaEmDia(ultima);
+    final cor = ultima == null || !emDia
+        ? Colors.orange.shade800
+        : corResultado(ultima.resultado);
+    final fundo = ultima == null || !emDia
+        ? const Color(0xFFFFF3E0)
+        : ultima.resultado == 'realizada'
+            ? const Color(0xFFE8F5E9)
+            : ultima.resultado == 'ausente'
+                ? const Color(0xFFFFF8E1)
+                : const Color(0xFFFFEBEE);
 
     showModalBottomSheet(
       context: context,
@@ -384,24 +431,46 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               subtitle: Text(d.bairro),
             ),
+            if (naoCadastrada)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3E5F5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.house_outlined, color: corNaoCadastrada),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Casa não cadastrada',
+                          style: TextStyle(fontSize: 15)),
+                    ),
+                  ],
+                ),
+              ),
             Container(
               width: double.infinity,
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: emDia ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                color: fundo,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
                   Icon(
-                    emDia ? Icons.check_circle_outline : Icons.warning_amber_rounded,
-                    color: emDia ? Colors.green[700] : Colors.orange[800],
+                    ultima == null || !emDia
+                        ? Icons.warning_amber_rounded
+                        : iconeResultado(ultima.resultado),
+                    color: cor,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _textoUltimaVisita(ultimaVisita),
+                      _textoUltimaVisita(ultima),
                       style: const TextStyle(fontSize: 15),
                     ),
                   ),
@@ -412,7 +481,9 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.home_outlined),
-              title: const Text('Ver famílias e moradores'),
+              title: Text(naoCadastrada
+                  ? 'Abrir casa / cadastrar família'
+                  : 'Ver famílias e moradores'),
               onTap: () {
                 Navigator.pop(context);
                 _abrirDetalhe(d);
@@ -511,8 +582,9 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
           final todos = dados.domicilios;
 
           final visiveis = todos.where((d) => _passaNoFiltro(d, dados)).toList();
-          final pendentes =
-              todos.where((d) => !_estaEmDia(dados.ultimasVisitas[d.id])).length;
+          final pendentes = todos
+              .where((d) => !_estaEmDia(dados.ultimasVisitas[d.id]))
+              .length;
 
           return Column(
             children: [
@@ -522,13 +594,13 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                 aoSincronizar: () => setState(_carregar),
               ),
               if (todos.isEmpty)
-                Expanded(
+                const Expanded(
                   child: Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(32),
+                      padding: EdgeInsets.all(32),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
+                        children: [
                           Icon(Icons.map_outlined, size: 64, color: Colors.black26),
                           SizedBox(height: 16),
                           Text(
@@ -602,12 +674,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                                     ),
                                     for (final d in visiveis)
                                       if (d.posX != null && d.posY != null)
-                                        _construirPino(
-                                          d,
-                                          dados.ultimasVisitas[d.id],
-                                          largura,
-                                          altura,
-                                        ),
+                                        _construirPino(d, dados, largura, altura),
                                   ],
                                 );
                               },
@@ -632,27 +699,11 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(Icons.location_on,
-                                      color: Colors.green, size: 18),
-                                  SizedBox(width: 4),
-                                  Text('Visitado',
-                                      style: TextStyle(fontSize: 12)),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(Icons.location_on,
-                                      color: Color(0xFF546E7A), size: 18),
-                                  SizedBox(width: 4),
-                                  Text('Pendente',
-                                      style: TextStyle(fontSize: 12)),
-                                ],
-                              ),
+                              _itemLegenda(corResultado('realizada'), 'Visitado'),
+                              _itemLegenda(corResultado('ausente'), 'Ausente'),
+                              _itemLegenda(corResultado('recusada'), 'Recusada'),
+                              _itemLegenda(corPendente, 'Pendente'),
+                              _itemLegenda(corNaoCadastrada, 'Não cadastrada'),
                             ],
                           ),
                         ),
@@ -698,14 +749,28 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     );
   }
 
+  Widget _itemLegenda(Color cor, String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_on, color: cor, size: 16),
+          const SizedBox(width: 4),
+          Text(texto, style: const TextStyle(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
   Widget _construirPino(
     Domicilio d,
-    DateTime? ultimaVisita,
+    _DadosMapa dados,
     double largura,
     double altura,
   ) {
-    final emDia = _estaEmDia(ultimaVisita);
-    final cor = emDia ? Colors.green[600]! : const Color(0xFF546E7A);
+    final cor = _corDoPino(d, dados);
+    final naoCadastrada = dados.naoCadastrados.contains(d.id);
     final destacado = d.id == _destacado;
 
     return Positioned(
@@ -717,7 +782,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
           scale: 1 / _escalaAtual,
           alignment: Alignment.bottomCenter,
           child: GestureDetector(
-            onTap: () => _abrirMenuCasa(d, ultimaVisita),
+            onTap: () =>
+                _abrirMenuCasa(d, dados.ultimasVisitas[d.id], naoCadastrada),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -734,7 +800,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                         style: TextStyle(fontSize: 9, color: Colors.white)),
                   ),
                 Icon(
-                  Icons.location_on,
+                  naoCadastrada ? Icons.help_center : Icons.location_on,
                   color: destacado ? Colors.amber[800] : cor,
                   size: destacado ? 46 : 36,
                 ),

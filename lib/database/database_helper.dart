@@ -21,7 +21,7 @@ class DatabaseHelper {
     return await openDatabase(
       path,
       password: chave,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -47,6 +47,7 @@ class DatabaseHelper {
         ativo INTEGER NOT NULL DEFAULT 1,
         pos_x REAL,
         pos_y REAL,
+        criado_em TEXT NOT NULL DEFAULT '',
         atualizado_em TEXT NOT NULL DEFAULT '',
         sincronizado INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (territorio_id) REFERENCES territorio (id)
@@ -85,20 +86,7 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.execute('''
-      CREATE TABLE visita (
-        id TEXT PRIMARY KEY,
-        familia_id TEXT NOT NULL,
-        morador_id TEXT,
-        data_visita TEXT NOT NULL,
-        observacoes TEXT,
-        ativo INTEGER NOT NULL DEFAULT 1,
-        atualizado_em TEXT NOT NULL DEFAULT '',
-        sincronizado INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (familia_id) REFERENCES familia (id),
-        FOREIGN KEY (morador_id) REFERENCES morador (id)
-      )
-    ''');
+    await _criarTabelaVisita(db);
 
     await db.execute('''
       CREATE TABLE controle_sync (
@@ -108,6 +96,26 @@ class DatabaseHelper {
     ''');
 
     await _criarIndices(db);
+  }
+
+  Future<void> _criarTabelaVisita(Database db, {String nome = 'visita'}) async {
+    await db.execute('''
+      CREATE TABLE $nome (
+        id TEXT PRIMARY KEY,
+        domicilio_id TEXT NOT NULL,
+        familia_id TEXT,
+        morador_id TEXT,
+        data_visita TEXT NOT NULL,
+        resultado TEXT NOT NULL DEFAULT 'realizada',
+        observacoes TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        atualizado_em TEXT NOT NULL DEFAULT '',
+        sincronizado INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (domicilio_id) REFERENCES domicilio (id),
+        FOREIGN KEY (familia_id) REFERENCES familia (id),
+        FOREIGN KEY (morador_id) REFERENCES morador (id)
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int versaoAntiga, int versaoNova) async {
@@ -132,8 +140,6 @@ class DatabaseHelper {
           'CREATE INDEX IF NOT EXISTS idx_familia_sync ON familia (sincronizado)');
       await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_morador_sync ON morador (sincronizado)');
-      await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_visita_sync ON visita (sincronizado)');
     }
 
     if (versaoAntiga < 3) {
@@ -145,6 +151,29 @@ class DatabaseHelper {
       await db.execute(
           'ALTER TABLE morador ADD COLUMN acamado INTEGER NOT NULL DEFAULT 0');
     }
+
+    if (versaoAntiga < 5) {
+      // data de cadastro do domicílio (usada no relatório mensal)
+      await db.execute(
+          "ALTER TABLE domicilio ADD COLUMN criado_em TEXT NOT NULL DEFAULT ''");
+      await db.execute(
+          "UPDATE domicilio SET criado_em = atualizado_em WHERE criado_em = ''");
+
+      // reconstrói a tabela de visitas: família opcional, domicílio obrigatório
+      await _criarTabelaVisita(db, nome: 'visita_nova');
+      await db.execute('''
+        INSERT INTO visita_nova
+          (id, domicilio_id, familia_id, morador_id, data_visita, resultado,
+           observacoes, ativo, atualizado_em, sincronizado)
+        SELECT v.id, f.domicilio_id, v.familia_id, v.morador_id, v.data_visita,
+               'realizada', v.observacoes, v.ativo, v.atualizado_em, 0
+        FROM visita v
+        INNER JOIN familia f ON f.id = v.familia_id
+      ''');
+      await db.execute('DROP TABLE visita');
+      await db.execute('ALTER TABLE visita_nova RENAME TO visita');
+      await _criarIndicesVisita(db);
+    }
   }
 
   Future<void> _criarIndices(Database db) async {
@@ -154,13 +183,23 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_domicilio_territorio ON domicilio (territorio_id)');
     await db.execute('CREATE INDEX idx_domicilio_endereco ON domicilio (rua, numero)');
     await db.execute('CREATE INDEX idx_familia_domicilio ON familia (domicilio_id)');
-    await db.execute('CREATE INDEX idx_visita_familia ON visita (familia_id)');
-    await db.execute('CREATE INDEX idx_visita_morador ON visita (morador_id)');
 
     await db.execute('CREATE INDEX idx_domicilio_sync ON domicilio (sincronizado)');
     await db.execute('CREATE INDEX idx_familia_sync ON familia (sincronizado)');
     await db.execute('CREATE INDEX idx_morador_sync ON morador (sincronizado)');
-    await db.execute('CREATE INDEX idx_visita_sync ON visita (sincronizado)');
+
+    await _criarIndicesVisita(db);
+  }
+
+  Future<void> _criarIndicesVisita(Database db) async {
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_visita_domicilio ON visita (domicilio_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_visita_familia ON visita (familia_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_visita_morador ON visita (morador_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_visita_sync ON visita (sincronizado)');
   }
 
   Future<DateTime?> ultimaSincronizacao() async {

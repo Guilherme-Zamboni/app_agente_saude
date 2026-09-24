@@ -28,8 +28,7 @@ class VisitaDao {
     );
   }
 
-  // Exclusão lógica: o registro permanece para que o servidor
-  // também seja informado da remoção na próxima sincronização.
+  /// Exclusão lógica, para que o servidor também seja informado.
   Future<void> inativar(String id) async {
     final db = await dbHelper.database;
     await db.update(
@@ -44,6 +43,7 @@ class VisitaDao {
     );
   }
 
+  /// Visitas gerais de uma família (sem morador específico).
   Future<List<Visita>> listarGeraisPorFamilia(String familiaId) async {
     final db = await dbHelper.database;
     final resultado = await db.query(
@@ -55,6 +55,19 @@ class VisitaDao {
     return resultado.map((v) => Visita.fromMap(v)).toList();
   }
 
+  /// Tentativas registradas em um domicílio sem família cadastrada.
+  Future<List<Visita>> listarTentativasDoDomicilio(String domicilioId) async {
+    final db = await dbHelper.database;
+    final resultado = await db.query(
+      'visita',
+      where: 'domicilio_id = ? AND familia_id IS NULL AND ativo = 1',
+      whereArgs: [domicilioId],
+      orderBy: 'data_visita DESC',
+    );
+    return resultado.map((v) => Visita.fromMap(v)).toList();
+  }
+
+  /// Histórico de um morador: visitas gerais da família + individuais dele.
   Future<List<Visita>> listarHistoricoDoMorador({
     required String moradorId,
     required String familiaId,
@@ -70,7 +83,8 @@ class VisitaDao {
     return resultado.map((v) => Visita.fromMap(v)).toList();
   }
 
-  Future<DateTime?> dataUltimaVisitaFamilia(String familiaId) async {
+  /// Visita geral mais recente de uma família.
+  Future<Visita?> ultimaVisitaFamilia(String familiaId) async {
     final db = await dbHelper.database;
     final resultado = await db.query(
       'visita',
@@ -80,96 +94,52 @@ class VisitaDao {
       limit: 1,
     );
     if (resultado.isEmpty) return null;
-    return DateTime.parse(resultado.first['data_visita'] as String);
+    return Visita.fromMap(resultado.first);
   }
 
-  Future<DateTime?> dataUltimaVisitaMorador({
-    required String moradorId,
-    required String familiaId,
-  }) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery('''
-      SELECT MAX(data_visita) as ultima FROM visita
-      WHERE (morador_id = ? OR (familia_id = ? AND morador_id IS NULL))
-        AND ativo = 1
-    ''', [moradorId, familiaId]);
-
-    final ultima = resultado.first['ultima'] as String?;
-    if (ultima == null) return null;
-    return DateTime.parse(ultima);
-  }
-
-  Future<int?> diasDesdeUltimaVisitaMorador({
-    required String moradorId,
-    required String familiaId,
-  }) async {
-    final ultima = await dataUltimaVisitaMorador(
-        moradorId: moradorId, familiaId: familiaId);
-    if (ultima == null) return null;
-    return DateTime.now().difference(ultima).inDays;
-  }
-
-  Future<DateTime?> dataUltimaVisitaDomicilio(String domicilioId) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery('''
-      SELECT MAX(v.data_visita) as ultima
-      FROM visita v
-      INNER JOIN familia f ON v.familia_id = f.id
-      WHERE f.domicilio_id = ? AND f.ativo = 1 AND v.ativo = 1
-    ''', [domicilioId]);
-
-    final ultima = resultado.first['ultima'] as String?;
-    if (ultima == null) return null;
-    return DateTime.parse(ultima);
-  }
-
-  Future<Map<String, DateTime>> ultimasVisitasPorTerritorio(
+  /// Visita mais recente de cada domicílio do território (com o resultado),
+  /// usada para colorir os pinos do mapa.
+  Future<Map<String, Visita>> ultimaVisitaPorDomicilio(
       String territorioId) async {
     final db = await dbHelper.database;
     final resultado = await db.rawQuery('''
-      SELECT d.id as domicilio_id, MAX(v.data_visita) as ultima
-      FROM domicilio d
-      INNER JOIN familia f ON f.domicilio_id = d.id AND f.ativo = 1
-      INNER JOIN visita v ON v.familia_id = f.id AND v.ativo = 1
-      WHERE d.territorio_id = ? AND d.ativo = 1
-      GROUP BY d.id
+      SELECT v.* FROM visita v
+      INNER JOIN domicilio d ON d.id = v.domicilio_id
+      WHERE d.territorio_id = ? AND d.ativo = 1 AND v.ativo = 1
+      ORDER BY v.data_visita DESC
     ''', [territorioId]);
 
-    final mapa = <String, DateTime>{};
+    final mapa = <String, Visita>{};
     for (final linha in resultado) {
-      final ultima = linha['ultima'] as String?;
-      if (ultima != null) {
-        mapa[linha['domicilio_id'] as String] = DateTime.parse(ultima);
-      }
+      final visita = Visita.fromMap(linha);
+      mapa.putIfAbsent(visita.domicilioId, () => visita);
     }
     return mapa;
   }
 
-  Future<List<String>> moradoresPendentesDeVisita({
-    required String territorioId,
-    int diasLimite = 30,
+  /// Só as datas, mantido para as telas que ainda usam esse formato.
+  Future<Map<String, DateTime>> ultimasVisitasPorTerritorio(
+      String territorioId) async {
+    final ultimas = await ultimaVisitaPorDomicilio(territorioId);
+    return ultimas.map((id, v) => MapEntry(id, v.dataVisita));
+  }
+
+  /// Quantidade de visitas por resultado dentro de um período.
+  Future<Map<String, int>> contarPorResultado({
+    required DateTime inicio,
+    required DateTime fim,
   }) async {
     final db = await dbHelper.database;
-    final limite = DateTime.now().subtract(Duration(days: diasLimite));
-
     final resultado = await db.rawQuery('''
-      SELECT m.id,
-        MAX(
-          CASE WHEN v.morador_id = m.id THEN v.data_visita
-               WHEN v.familia_id = f.id AND v.morador_id IS NULL THEN v.data_visita
-               ELSE NULL END
-        ) as ultima_visita
-      FROM morador m
-      INNER JOIN familia f ON m.familia_id = f.id
-      INNER JOIN domicilio d ON f.domicilio_id = d.id
-      LEFT JOIN visita v ON (v.morador_id = m.id
-                             OR (v.familia_id = f.id AND v.morador_id IS NULL))
-                            AND v.ativo = 1
-      WHERE d.territorio_id = ? AND m.ativo = 1
-      GROUP BY m.id
-      HAVING ultima_visita IS NULL OR ultima_visita < ?
-    ''', [territorioId, limite.toIso8601String()]);
+      SELECT resultado, COUNT(*) as total FROM visita
+      WHERE ativo = 1 AND data_visita >= ? AND data_visita < ?
+      GROUP BY resultado
+    ''', [inicio.toIso8601String(), fim.toIso8601String()]);
 
-    return resultado.map((r) => r['id'] as String).toList();
+    final mapa = {for (final r in resultadosVisita) r: 0};
+    for (final linha in resultado) {
+      mapa[linha['resultado'] as String] = (linha['total'] as int?) ?? 0;
+    }
+    return mapa;
   }
 }

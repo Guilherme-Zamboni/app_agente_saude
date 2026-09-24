@@ -8,6 +8,7 @@ class Domicilio {
   final bool ativo;
   final double? posX;
   final double? posY;
+  final DateTime criadoEm;
   final DateTime atualizadoEm;
   final bool sincronizado;
 
@@ -21,9 +22,11 @@ class Domicilio {
     this.ativo = true,
     this.posX,
     this.posY,
+    DateTime? criadoEm,
     DateTime? atualizadoEm,
     this.sincronizado = false,
-  }) : atualizadoEm = atualizadoEm ?? DateTime.now();
+  })  : criadoEm = criadoEm ?? DateTime.now(),
+        atualizadoEm = atualizadoEm ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
     return {
@@ -36,12 +39,12 @@ class Domicilio {
       'ativo': ativo ? 1 : 0,
       'pos_x': posX,
       'pos_y': posY,
+      'criado_em': criadoEm.toIso8601String(),
       'atualizado_em': atualizadoEm.toIso8601String(),
       'sincronizado': sincronizado ? 1 : 0,
     };
   }
 
-  // Formato usado ao enviar para o Supabase (sem o campo de controle local)
   Map<String, dynamic> toSupabase() {
     return {
       'id': id,
@@ -53,11 +56,20 @@ class Domicilio {
       'ativo': ativo,
       'pos_x': posX,
       'pos_y': posY,
+      'criado_em': criadoEm.toIso8601String(),
       'atualizado_em': atualizadoEm.toIso8601String(),
     };
   }
 
+  static DateTime? _data(dynamic valor) {
+    if (valor == null) return null;
+    final texto = valor.toString();
+    if (texto.isEmpty) return null;
+    return DateTime.tryParse(texto);
+  }
+
   factory Domicilio.fromMap(Map<String, dynamic> map) {
+    final atualizado = _data(map['atualizado_em']);
     return Domicilio(
       id: map['id'],
       territorioId: map['territorio_id'],
@@ -68,9 +80,8 @@ class Domicilio {
       ativo: map['ativo'] == 1 || map['ativo'] == true,
       posX: (map['pos_x'] as num?)?.toDouble(),
       posY: (map['pos_y'] as num?)?.toDouble(),
-      atualizadoEm: map['atualizado_em'] == null || map['atualizado_em'] == ''
-          ? DateTime.now()
-          : DateTime.parse(map['atualizado_em']),
+      criadoEm: _data(map['criado_em']) ?? atualizado,
+      atualizadoEm: atualizado,
       sincronizado: map['sincronizado'] == 1 || map['sincronizado'] == true,
     );
   }

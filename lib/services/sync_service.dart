@@ -107,12 +107,17 @@ class SyncService {
     final pendentes = await SyncHelper.pendentes(tabela);
     if (pendentes.isEmpty) return 0;
 
+    final usuarioId = _cliente.auth.currentUser?.id;
     final enviadosComSucesso = <String>[];
 
     // Envia um a um para que uma falha isolada não derrube o lote inteiro
     for (final registro in pendentes) {
       try {
-        await _cliente.from(tabela).upsert(converter(registro));
+        final dados = converter(registro);
+        if (tabela == 'visita' && usuarioId != null) {
+          dados['registrado_por'] = usuarioId;
+        }
+        await _cliente.from(tabela).upsert(dados);
         enviadosComSucesso.add(registro['id'] as String);
       } catch (e) {
         // ignore: avoid_print
@@ -147,6 +152,21 @@ class SyncService {
 
     if (idsDomicilios.isEmpty) return total;
 
+    // Visitas vêm pelo domicílio, incluindo as tentativas em casas sem família
+    final visitas = await _cliente
+        .from('visita')
+        .select()
+        .inFilter('domicilio_id', idsDomicilios);
+
+    for (final v in visitas) {
+      await SyncHelper.salvarDoServidor(
+        'visita',
+        Visita.fromMap(v).toMap(),
+        _dataDe(v['atualizado_em']),
+      );
+      total++;
+    }
+
     final familias = await _cliente
         .from('familia')
         .select()
@@ -175,20 +195,6 @@ class SyncService {
         'morador',
         Morador.fromMap(m).toMap(),
         _dataDe(m['atualizado_em']),
-      );
-      total++;
-    }
-
-    final visitas = await _cliente
-        .from('visita')
-        .select()
-        .inFilter('familia_id', idsFamilias);
-
-    for (final v in visitas) {
-      await SyncHelper.salvarDoServidor(
-        'visita',
-        Visita.fromMap(v).toMap(),
-        _dataDe(v['atualizado_em']),
       );
       total++;
     }
