@@ -11,11 +11,15 @@ import 'tela_selecionar_local_mapa.dart';
 class TelaCadastroDomicilio extends StatefulWidget {
   final String territorioId;
   final Domicilio? domicilioParaEditar;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
   const TelaCadastroDomicilio({
     super.key,
     required this.territorioId,
     this.domicilioParaEditar,
+    this.imagemMapa,
+    this.proporcaoMapa,
   });
 
   @override
@@ -94,7 +98,12 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     // 1) marca a posição da casa no mapa
     final posicao = await Navigator.push<Offset?>(
       context,
-      MaterialPageRoute(builder: (_) => const TelaSelecionarLocalMapa()),
+      MaterialPageRoute(
+        builder: (_) => TelaSelecionarLocalMapa(
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
+        ),
+      ),
     );
 
     if (posicao != null) {
@@ -109,7 +118,6 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     if (!mounted) return;
 
     if (escolha == 'familia') {
-      // segue o fluxo normal de cadastro da família
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -119,7 +127,6 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
       return;
     }
 
-    // 'ninguem' ou fechou a escolha: a casa fica como não cadastrada
     final mensageiro = ScaffoldMessenger.of(context);
 
     if (escolha == 'ninguem') {

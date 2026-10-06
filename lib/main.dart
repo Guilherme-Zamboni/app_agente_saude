@@ -132,6 +132,8 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
         return TelaMapaTerritorio(
           territorioId: territorio['id'],
           nomeTerritorio: territorio['nome'],
+          imagemMapa: territorio['imagem_mapa'] as String?,
+          proporcaoMapa: (territorio['proporcao_mapa'] as num?)?.toDouble(),
         );
       },
     );

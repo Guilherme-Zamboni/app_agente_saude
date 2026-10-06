@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import '../widgets/mapa_fundo.dart';
 
 class TelaSelecionarLocalMapa extends StatefulWidget {
   final double? posXInicial;
   final double? posYInicial;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
-  const TelaSelecionarLocalMapa({super.key, this.posXInicial, this.posYInicial});
+  const TelaSelecionarLocalMapa({
+    super.key,
+    this.posXInicial,
+    this.posYInicial,
+    this.imagemMapa,
+    this.proporcaoMapa,
+  });
 
   @override
-  State<TelaSelecionarLocalMapa> createState() => _TelaSelecionarLocalMapaState();
+  State<TelaSelecionarLocalMapa> createState() =>
+      _TelaSelecionarLocalMapaState();
 }
 
 class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
@@ -15,10 +25,9 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   final _chaveMapa = GlobalKey();
   double _escalaAtual = 1.0;
 
-  // TROQUE pelos números reais da sua imagem (largura / altura)
-  static const double _proporcaoMapa = 1024 / 764;
-
   Offset? _posicaoSelecionada; // proporção 0.0 a 1.0
+
+  double get _proporcaoMapa => widget.proporcaoMapa ?? (1200 / 900);
 
   @override
   void initState() {
@@ -41,24 +50,10 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   }
 
   void _ajustarZoom(double fator) {
-    final tamanho = context.size;
-    if (tamanho == null) return;
-
-    // ancora o zoom no centro da tela, para não perder o enquadramento
-    final centro = Offset(tamanho.width / 2, tamanho.height / 2);
-    final matriz = _controladorZoom.value.clone();
-
-    final escalaAtual = matriz.getMaxScaleOnAxis();
-    final escalaDesejada = (escalaAtual * fator).clamp(1.0, 4.0);
-    final fatorReal = escalaDesejada / escalaAtual;
-    if (fatorReal == 1.0) return;
-
-    matriz
-      ..translate(centro.dx, centro.dy)
-      ..scale(fatorReal, fatorReal, 1.0)
-      ..translate(-centro.dx, -centro.dy);
-
-    setState(() => _controladorZoom.value = matriz);
+    final matrizAtual = _controladorZoom.value.clone();
+    setState(() {
+      _controladorZoom.value = matrizAtual..scale(fator, fator, 1.0);
+    });
   }
 
   void _aoTocarNoMapa(TapUpDetails details) {
@@ -82,9 +77,7 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
     final temPosicao = _posicaoSelecionada != null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Indique a localização'),
-      ),
+      appBar: AppBar(title: const Text('Indique a localização')),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -122,11 +115,10 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
                         key: _chaveMapa,
                         clipBehavior: Clip.none,
                         children: [
-                          Image.asset(
-                            'assets/maps/territorio_teste.jpg',
-                            width: largura,
-                            height: altura,
-                            fit: BoxFit.fill,
+                          MapaFundo(
+                            urlImagem: widget.imagemMapa,
+                            largura: largura,
+                            altura: altura,
                           ),
                           if (_posicaoSelecionada != null)
                             Positioned(

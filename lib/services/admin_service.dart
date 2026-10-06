@@ -75,4 +75,16 @@ class AdminService {
   static Future<void> inativarTerritorio(String id) async {
     await _cliente.from('territorio').update({'ativo': false}).eq('id', id);
   }
+
+    static Future<void> atualizarMapa({
+    required String id,
+    required String url,
+    required double proporcao,
+  }) async {
+    await _cliente.from('territorio').update({
+      'imagem_mapa': url,
+      'proporcao_mapa': proporcao,
+    }).eq('id', id);
+  }
+  
 }

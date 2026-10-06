@@ -8,12 +8,13 @@ import '../database/morador_dao.dart';
 import '../services/auth_service.dart';
 import '../widgets/barra_sincronizacao.dart';
 import '../widgets/dialogo_visita.dart';
+import '../widgets/mapa_fundo.dart';
 import 'tela_cadastro_domicilio.dart';
 import 'tela_detalhe_domicilio.dart';
 import 'tela_busca_moradores.dart';
 import 'tela_estatisticas.dart';
-import 'tela_selecionar_local_mapa.dart';
 import 'tela_relatorio.dart';
+import 'tela_selecionar_local_mapa.dart';
 
 const int diasLimiteVisita = 30;
 
@@ -52,12 +53,16 @@ class TelaMapaTerritorio extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
   final String? domicilioDestacado;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
   const TelaMapaTerritorio({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
     this.domicilioDestacado,
+    this.imagemMapa,
+    this.proporcaoMapa,
   });
 
   @override
@@ -86,8 +91,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
   FiltroMapa _filtroAtual = FiltroMapa.todos;
   String? _destacado;
 
-  // TROQUE pelos números reais da sua imagem (largura / altura)
-  static const double _proporcaoMapa = 1200 / 900;
+  // proporção da imagem do território; usa a padrão se não houver
+  double get _proporcaoMapa => widget.proporcaoMapa ?? (1200 / 900);
 
   @override
   void initState() {
@@ -318,7 +323,11 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => TelaCadastroDomicilio(territorioId: widget.territorioId),
+        builder: (_) => TelaCadastroDomicilio(
+          territorioId: widget.territorioId,
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
+        ),
       ),
     );
     _recarregarTudo();
@@ -339,6 +348,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         builder: (_) => TelaCadastroDomicilio(
           territorioId: widget.territorioId,
           domicilioParaEditar: domicilio,
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
         ),
       ),
     );
@@ -352,6 +363,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
         builder: (_) => TelaSelecionarLocalMapa(
           posXInicial: domicilio.posX,
           posYInicial: domicilio.posY,
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
         ),
       ),
     );
@@ -573,6 +586,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                   builder: (_) => TelaBuscaMoradores(
                     territorioId: widget.territorioId,
                     nomeTerritorio: widget.nomeTerritorio,
+                    imagemMapa: widget.imagemMapa,
+                    proporcaoMapa: widget.proporcaoMapa,
                   ),
                 ),
               );
@@ -685,11 +700,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                                 return Stack(
                                   clipBehavior: Clip.none,
                                   children: [
-                                    Image.asset(
-                                      'assets/maps/territorio_teste.jpg',
-                                      width: largura,
-                                      height: altura,
-                                      fit: BoxFit.fill,
+                                    MapaFundo(
+                                      urlImagem: widget.imagemMapa,
+                                      largura: largura,
+                                      altura: altura,
                                     ),
                                     for (final d in visiveis)
                                       if (d.posX != null && d.posY != null)

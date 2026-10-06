@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/admin_service.dart';
+import '../services/mapa_service.dart';
 
 class TelaGestaoTerritorios extends StatefulWidget {
   const TelaGestaoTerritorios({super.key});
@@ -95,6 +98,90 @@ class _TelaGestaoTerritoriosState extends State<TelaGestaoTerritorios> {
     }
   }
 
+  Future<void> _enviarMapa(Map<String, dynamic> territorio) async {
+    final escolha = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Imagem do mapa',
+                  style:
+                      TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Escolher da galeria'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tirar foto'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (escolha == null) return;
+
+    final selecionada =
+        await ImagePicker().pickImage(source: escolha, imageQuality: 85);
+    if (selecionada == null || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Enviando mapa...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final resultado = await MapaService.enviar(
+        territorioId: territorio['id'],
+        arquivo: File(selecionada.path),
+      );
+
+      await AdminService.atualizarMapa(
+        id: territorio['id'],
+        url: resultado['url'],
+        proporcao: resultado['proporcao'],
+      );
+
+      // se já havia um mapa, limpa o cache para o app baixar o novo
+      final anterior = territorio['imagem_mapa'] as String?;
+      if (anterior != null) await MapaService.limparCache(anterior);
+
+      if (!mounted) return;
+      Navigator.pop(context); // fecha o "enviando"
+      setState(_carregar);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mapa atualizado!')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível enviar: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,28 +222,58 @@ class _TelaGestaoTerritoriosState extends State<TelaGestaoTerritorios> {
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.only(bottom: 90),
             itemCount: territorios.length,
             itemBuilder: (context, index) {
               final t = territorios[index];
               final agente = t['agente'];
+              final temMapa = (t['imagem_mapa'] as String?)?.isNotEmpty ?? false;
 
-              return ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Colors.teal,
-                  child: Icon(Icons.map, color: Colors.white),
-                ),
-                title: Text(t['nome'], style: const TextStyle(fontSize: 17)),
-                subtitle: Text(
-                  agente != null
-                      ? 'Agente: ${agente['nome']}'
-                      : 'Sem agente vinculado',
-                  style: TextStyle(
-                    color: agente != null ? null : Colors.orange[800],
-                  ),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => _abrirFormulario(territorio: t),
+              return Card(
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: Colors.teal,
+                        child: Icon(Icons.map, color: Colors.white),
+                      ),
+                      title:
+                          Text(t['nome'], style: const TextStyle(fontSize: 17)),
+                      subtitle: Text(
+                        agente != null
+                            ? 'Agente: ${agente['nome']}'
+                            : 'Sem agente vinculado',
+                        style: TextStyle(
+                          color: agente != null ? null : Colors.orange[800],
+                        ),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => _abrirFormulario(territorio: t),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        temMapa ? Icons.image : Icons.image_not_supported_outlined,
+                        color: temMapa ? Colors.teal : Colors.orange[800],
+                      ),
+                      title: Text(
+                        temMapa
+                            ? 'Mapa definido'
+                            : 'Sem mapa — usando imagem padrão',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      trailing: TextButton.icon(
+                        onPressed: () => _enviarMapa(t),
+                        icon: const Icon(Icons.upload, size: 18),
+                        label: Text(temMapa ? 'Trocar' : 'Enviar'),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },

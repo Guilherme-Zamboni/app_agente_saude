@@ -7,11 +7,15 @@ import 'tela_mapa_territorio.dart';
 class TelaBuscaMoradores extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
   const TelaBuscaMoradores({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
+    this.imagemMapa,
+    this.proporcaoMapa,
   });
 
   @override
@@ -154,6 +158,8 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
           territorioId: widget.territorioId,
           nomeTerritorio: widget.nomeTerritorio,
           domicilioDestacado: domicilioId,
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
         ),
       ),
     );
@@ -285,7 +291,8 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
                                 Text(m.nome, style: const TextStyle(fontSize: 17)),
                             subtitle: Text(
                               '${_calcularIdade(m.dataNascimento)} anos'
-                              '${m.gestante ? ' • Gestante' : ''}',
+                              '${m.gestante ? ' • Gestante' : ''}'
+                              '${m.acamado ? ' • Acamado' : ''}',
                             ),
                             onTap: () => _abrirFicha(m),
                             trailing: Row(
