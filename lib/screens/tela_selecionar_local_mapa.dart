@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/mapa_config.dart';
 import '../widgets/mapa_fundo.dart';
 
 class TelaSelecionarLocalMapa extends StatefulWidget {
@@ -50,10 +51,23 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   }
 
   void _ajustarZoom(double fator) {
-    final matrizAtual = _controladorZoom.value.clone();
-    setState(() {
-      _controladorZoom.value = matrizAtual..scale(fator, fator, 1.0);
-    });
+    final tamanho = context.size;
+    if (tamanho == null) return;
+
+    final centro = Offset(tamanho.width / 2, tamanho.height / 2);
+    final matriz = _controladorZoom.value.clone();
+
+    final escalaAtual = matriz.getMaxScaleOnAxis();
+    final escalaDesejada = (escalaAtual * fator).clamp(1.0, zoomMaximo);
+    final fatorReal = escalaDesejada / escalaAtual;
+    if (fatorReal == 1.0) return;
+
+    matriz
+      ..translate(centro.dx, centro.dy)
+      ..scale(fatorReal, fatorReal, 1.0)
+      ..translate(-centro.dx, -centro.dy);
+
+    setState(() => _controladorZoom.value = matriz);
   }
 
   void _aoTocarNoMapa(TapUpDetails details) {
@@ -99,7 +113,7 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
           InteractiveViewer(
             transformationController: _controladorZoom,
             minScale: 1,
-            maxScale: 4,
+            maxScale: zoomMaximo,
             child: Center(
               child: AspectRatio(
                 aspectRatio: _proporcaoMapa,
@@ -127,10 +141,10 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
                               child: FractionalTranslation(
                                 translation: const Offset(-0.5, -1.0),
                                 child: Transform.scale(
-                                  scale: 1 / _escalaAtual,
+                                  scale: escalaDoPino(_escalaAtual),
                                   alignment: Alignment.bottomCenter,
                                   child: const Icon(Icons.location_on,
-                                      color: Colors.red, size: 36),
+                                      color: Colors.red, size: tamanhoPino),
                                 ),
                               ),
                             ),

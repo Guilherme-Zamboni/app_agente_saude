@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
+import '../config/mapa_config.dart';
 import '../models/domicilio.dart';
 import '../models/visita.dart';
 import '../database/domicilio_dao.dart';
@@ -225,7 +226,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     final matriz = _controladorZoom.value.clone();
 
     final escalaAtual = matriz.getMaxScaleOnAxis();
-    final escalaDesejada = (escalaAtual * fator).clamp(1.0, 4.0);
+    final escalaDesejada = (escalaAtual * fator).clamp(1.0, zoomMaximo);
     final fatorReal = escalaDesejada / escalaAtual;
     if (fatorReal == 1.0) return;
 
@@ -687,7 +688,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                       InteractiveViewer(
                         transformationController: _controladorZoom,
                         minScale: 1,
-                        maxScale: 4,
+                        maxScale: zoomMaximo,
                         child: Center(
                           child: AspectRatio(
                             key: _chaveMapa,
@@ -812,47 +813,54 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
       child: FractionalTranslation(
         translation: const Offset(-0.5, -1.0),
         child: Transform.scale(
-          scale: 1 / _escalaAtual,
+          scale: escalaDoPino(_escalaAtual),
           alignment: Alignment.bottomCenter,
           child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () =>
                 _abrirMenuCasa(d, dados.ultimasVisitas[d.id], naoCadastrada),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (destacado)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    margin: const EdgeInsets.only(bottom: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[700],
-                      borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              // aumenta só a área de toque, sem mudar o visual
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (destacado)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      margin: const EdgeInsets.only(bottom: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[700],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text('encontrado',
+                          style: TextStyle(fontSize: 7, color: Colors.white)),
                     ),
-                    child: const Text('encontrado',
-                        style: TextStyle(fontSize: 9, color: Colors.white)),
+                  Icon(
+                    naoCadastrada ? Icons.help_center : Icons.location_on,
+                    color: destacado ? Colors.amber[800] : cor,
+                    size: destacado ? tamanhoPinoDestacado : tamanhoPino,
                   ),
-                Icon(
-                  naoCadastrada ? Icons.help_center : Icons.location_on,
-                  color: destacado ? Colors.amber[800] : cor,
-                  size: destacado ? 46 : 36,
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black26, blurRadius: 2),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 3, vertical: 0.5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black26, blurRadius: 1),
+                      ],
+                    ),
+                    child: Text(
+                      d.numero,
+                      style: const TextStyle(
+                          fontSize: fontePinoNumero,
+                          fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  child: Text(
-                    d.numero,
-                    style: const TextStyle(
-                        fontSize: 10, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
