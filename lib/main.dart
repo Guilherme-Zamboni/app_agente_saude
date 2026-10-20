@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -76,7 +77,8 @@ class _CarregandoPerfil extends StatefulWidget {
 }
 
 class _CarregandoPerfilState extends State<_CarregandoPerfil> {
-  late Future<_DadosSessao> _future;
+  late Future<SessaoCarregada> _future;
+  bool _avisouOffline = false;
 
   @override
   void initState() {
@@ -84,31 +86,58 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
     _future = _carregar();
   }
 
-  Future<_DadosSessao> _carregar() async {
-    final perfil = await AuthService.carregarPerfil();
-    final territorio = await AuthService.meuTerritorio();
+  Future<SessaoCarregada> _carregar() async {
+    final sessao = await AuthService.carregarSessao();
 
     // grava o território no banco local para as chaves estrangeiras funcionarem
-    if (territorio != null) {
-      await SyncService.garantirTerritorioLocal(territorio);
+    if (sessao.territorio != null) {
+      await SyncService.garantirTerritorioLocal(sessao.territorio!);
     }
 
-    return _DadosSessao(perfil, territorio);
+    return sessao;
+  }
+
+  void _tentarNovamente() {
+    setState(() => _future = _carregar());
+  }
+
+  void _avisarModoOffline() {
+    if (_avisouOffline) return;
+    _avisouOffline = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sem conexão com o servidor. Usando os dados salvos no aparelho; '
+            'o que você registrar será enviado quando a internet voltar.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_DadosSessao>(
+    return FutureBuilder<SessaoCarregada>(
       future: _future,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint('>>> ERRO AO CARREGAR SESSÃO: ${snapshot.error}');
+          return _telaErro(snapshot.error!);
+        }
+
         if (!snapshot.hasData) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final perfil = snapshot.data!.perfil;
-        final territorio = snapshot.data!.territorio;
+        final sessao = snapshot.data!;
+        final perfil = sessao.perfil;
+        final territorio = sessao.territorio;
 
         if (perfil == null) {
           return _telaAviso(
@@ -129,6 +158,8 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
           );
         }
 
+        if (sessao.offline) _avisarModoOffline();
+
         return TelaMapaTerritorio(
           territorioId: territorio['id'],
           nomeTerritorio: territorio['nome'],
@@ -136,6 +167,53 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
           proporcaoMapa: (territorio['proporcao_mapa'] as num?)?.toDouble(),
         );
       },
+    );
+  }
+
+  Widget _telaErro(Object erro) {
+    final demorou = erro is TimeoutException;
+
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cloud_off, size: 56, color: Colors.black38),
+              const SizedBox(height: 16),
+              Text(
+                demorou
+                    ? 'O servidor demorou demais para responder.\n'
+                        'Verifique a internet e tente novamente.'
+                    : 'Não foi possível carregar seus dados.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 17),
+              ),
+              if (!demorou) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '$erro',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Colors.black45),
+                ),
+              ],
+              const SizedBox(height: 28),
+              ElevatedButton.icon(
+                onPressed: _tentarNovamente,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tentar novamente'),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => AuthService.sair(),
+                icon: const Icon(Icons.logout),
+                label: const Text('Sair'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -166,11 +244,4 @@ class _CarregandoPerfilState extends State<_CarregandoPerfil> {
       ),
     );
   }
-}
-
-class _DadosSessao {
-  final PerfilUsuario? perfil;
-  final Map<String, dynamic>? territorio;
-
-  _DadosSessao(this.perfil, this.territorio);
 }
