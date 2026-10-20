@@ -12,6 +12,9 @@ class MapaService {
   static final _cliente = Supabase.instance.client;
   static const _bucket = 'mapas';
 
+  // downloads em andamento, para não baixar a mesma imagem duas vezes
+  static final Map<String, Future<File?>> _emAndamento = {};
+
   /// Envia a imagem e devolve a URL pública.
   /// Calcula também a proporção para o app desenhar sem distorcer.
   static Future<Map<String, dynamic>> enviar({
@@ -54,9 +57,19 @@ class MapaService {
   /// Devolve o arquivo local da imagem, baixando se ainda não estiver
   /// em cache. Retorna null se não houver imagem ou se falhar o download
   /// (o app cai na imagem padrão).
-  static Future<File?> obter(String? url) async {
-    if (url == null || url.isEmpty) return null;
+  static Future<File?> obter(String? url) {
+    if (url == null || url.isEmpty) return Future.value(null);
 
+    final existente = _emAndamento[url];
+    if (existente != null) return existente;
+
+    final futuro = _baixarOuLerCache(url);
+    _emAndamento[url] = futuro;
+    futuro.whenComplete(() => _emAndamento.remove(url));
+    return futuro;
+  }
+
+  static Future<File?> _baixarOuLerCache(String url) async {
     try {
       final arquivo = await _arquivoCache(url);
       if (await arquivo.exists()) return arquivo;

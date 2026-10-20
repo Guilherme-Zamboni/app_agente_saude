@@ -8,12 +8,16 @@ class TelaBuscaConsulta extends StatefulWidget {
   final String territorioId;
   final String nomeTerritorio;
   final String? nomeAgente;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
   const TelaBuscaConsulta({
     super.key,
     required this.territorioId,
     required this.nomeTerritorio,
     this.nomeAgente,
+    this.imagemMapa,
+    this.proporcaoMapa,
   });
 
   @override
@@ -109,6 +113,8 @@ class _TelaBuscaConsultaState extends State<TelaBuscaConsulta> {
           nomeTerritorio: widget.nomeTerritorio,
           nomeAgente: widget.nomeAgente,
           domicilioDestacado: domicilioId,
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
         ),
       ),
     );
@@ -253,7 +259,8 @@ class _TelaBuscaConsultaState extends State<TelaBuscaConsulta> {
                                 style: const TextStyle(fontSize: 17)),
                             subtitle: Text(
                               '${_idade(m.dataNascimento)} anos'
-                              '${m.gestante ? ' • Gestante' : ''}',
+                              '${m.gestante ? ' • Gestante' : ''}'
+                              '${m.acamado ? ' • Acamado' : ''}',
                             ),
                             onTap: () => Navigator.push(
                               context,

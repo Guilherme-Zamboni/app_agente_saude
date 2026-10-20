@@ -70,6 +70,9 @@ class _TelaSelecionarMicroareaState extends State<TelaSelecionarMicroarea> {
                       territorioId: t['id'],
                       nomeTerritorio: t['nome'],
                       nomeAgente: agente?['nome'],
+                      imagemMapa: t['imagem_mapa'] as String?,
+                      proporcaoMapa:
+                          (t['proporcao_mapa'] as num?)?.toDouble(),
                     ),
                   ),
                 ),

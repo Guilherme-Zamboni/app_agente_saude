@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../config/mapa_config.dart';
 import '../services/mapa_service.dart';
 
 /// Desenha a imagem de fundo do mapa: a do território, se houver,
@@ -84,13 +86,76 @@ class _MapaFundoState extends State<MapaFundo> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 6),
-                  Text('Carregando mapa...',
-                      style: TextStyle(fontSize: 11)),
+                  Text('Carregando mapa...', style: TextStyle(fontSize: 11)),
                 ],
               ),
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Fundo desfocado que preenche toda a área atrás do mapa, para as
+/// faixas vazias parecerem continuação da própria imagem.
+/// Deve ser usado com Positioned.fill dentro de um Stack.
+class FundoMapaDesfocado extends StatefulWidget {
+  final String? urlImagem;
+
+  const FundoMapaDesfocado({super.key, required this.urlImagem});
+
+  @override
+  State<FundoMapaDesfocado> createState() => _FundoMapaDesfocadoState();
+}
+
+class _FundoMapaDesfocadoState extends State<FundoMapaDesfocado> {
+  File? _arquivo;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  @override
+  void didUpdateWidget(FundoMapaDesfocado anterior) {
+    super.didUpdateWidget(anterior);
+    if (anterior.urlImagem != widget.urlImagem) _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final arquivo = await MapaService.obter(widget.urlImagem);
+    if (!mounted) return;
+    setState(() => _arquivo = arquivo);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // como é borrado, não precisa decodificar a imagem em tamanho total
+    final imagem = _arquivo != null
+        ? Image.file(_arquivo!, fit: BoxFit.cover, cacheWidth: 500)
+        : Image.asset('assets/maps/territorio_teste.jpg',
+            fit: BoxFit.cover, cacheWidth: 500);
+
+    // RepaintBoundary: o desfoque não é redesenhado a cada passo do zoom
+    return RepaintBoundary(
+      child: ClipRect(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(
+                sigmaX: desfoqueFundo,
+                sigmaY: desfoqueFundo,
+              ),
+              child: imagem,
+            ),
+            ColoredBox(
+              color: Colors.white.withValues(alpha: clareamentoFundo),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

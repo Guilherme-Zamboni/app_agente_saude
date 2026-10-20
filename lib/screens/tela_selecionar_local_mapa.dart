@@ -110,6 +110,10 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
       ),
       body: Stack(
         children: [
+          // fundo desfocado, atrás do mapa
+          Positioned.fill(
+            child: FundoMapaDesfocado(urlImagem: widget.imagemMapa),
+          ),
           InteractiveViewer(
             transformationController: _controladorZoom,
             minScale: 1,

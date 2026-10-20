@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 /// Ajustes visuais dos mapas, em um só lugar.
 const double zoomMaximo = 8.0;
-const double tamanhoPino = 20;
+const double tamanhoPino = 14;
 const double tamanhoPinoDestacado = 28;
-const double fontePinoNumero = 8;
+const double fontePinoNumero = 5;
 
 /// Quanto o pino acompanha o zoom do mapa:
 /// 0.0 = tamanho fixo na tela (não cresce)
@@ -15,3 +15,10 @@ const double crescimentoPino = 0.5;
 /// Fator aplicado ao pino para a escala atual do mapa.
 double escalaDoPino(double escalaMapa) =>
     math.pow(escalaMapa, crescimentoPino - 1).toDouble();
+
+/// Fundo desfocado atrás do mapa.
+/// Intensidade do desfoque (maior = mais borrado).
+const double desfoqueFundo = 18;
+
+/// Véu branco sobre o fundo: 0 = sem véu, 1 = totalmente branco.
+const double clareamentoFundo = 0.25;

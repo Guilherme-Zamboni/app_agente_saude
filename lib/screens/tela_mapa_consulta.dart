@@ -6,6 +6,7 @@ import '../models/morador.dart';
 import '../models/visita.dart';
 import '../services/consulta_service.dart';
 import '../widgets/dialogo_visita.dart';
+import '../widgets/mapa_fundo.dart';
 import 'tela_busca_consulta.dart';
 import 'tela_ficha_consulta.dart';
 import 'tela_mapa_territorio.dart' show corPendente, corNaoCadastrada;
@@ -45,6 +46,8 @@ class TelaMapaConsulta extends StatefulWidget {
   final String nomeTerritorio;
   final String? nomeAgente;
   final String? domicilioDestacado;
+  final String? imagemMapa;
+  final double? proporcaoMapa;
 
   const TelaMapaConsulta({
     super.key,
@@ -52,6 +55,8 @@ class TelaMapaConsulta extends StatefulWidget {
     required this.nomeTerritorio,
     this.nomeAgente,
     this.domicilioDestacado,
+    this.imagemMapa,
+    this.proporcaoMapa,
   });
 
   @override
@@ -76,8 +81,8 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
   FiltroConsulta _filtroAtual = FiltroConsulta.todos;
   String? _destacado;
 
-  // TROQUE pelos números reais da sua imagem (largura / altura)
-  static const double _proporcaoMapa = 1200 / 900;
+  // proporção da imagem do território; usa a padrão se não houver
+  double get _proporcaoMapa => widget.proporcaoMapa ?? (1200 / 900);
 
   @override
   void initState() {
@@ -476,6 +481,8 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                   territorioId: widget.territorioId,
                   nomeTerritorio: widget.nomeTerritorio,
                   nomeAgente: widget.nomeAgente,
+                  imagemMapa: widget.imagemMapa,
+                  proporcaoMapa: widget.proporcaoMapa,
                 ),
               ),
             ),
@@ -563,6 +570,10 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
               Expanded(
                 child: Stack(
                   children: [
+                    // fundo desfocado, atrás do mapa
+                    Positioned.fill(
+                      child: FundoMapaDesfocado(urlImagem: widget.imagemMapa),
+                    ),
                     InteractiveViewer(
                       transformationController: _controladorZoom,
                       minScale: 1,
@@ -579,11 +590,10 @@ class _TelaMapaConsultaState extends State<TelaMapaConsulta> {
                               return Stack(
                                 clipBehavior: Clip.none,
                                 children: [
-                                  Image.asset(
-                                    'assets/maps/territorio_teste.jpg',
-                                    width: largura,
-                                    height: altura,
-                                    fit: BoxFit.fill,
+                                  MapaFundo(
+                                    urlImagem: widget.imagemMapa,
+                                    largura: largura,
+                                    altura: altura,
                                   ),
                                   for (final d in visiveis)
                                     if (d.posX != null && d.posY != null)

@@ -685,6 +685,10 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                 Expanded(
                   child: Stack(
                     children: [
+                      // fundo desfocado, atrás do mapa
+                      Positioned.fill(
+                        child: FundoMapaDesfocado(urlImagem: widget.imagemMapa),
+                      ),
                       InteractiveViewer(
                         transformationController: _controladorZoom,
                         minScale: 1,
