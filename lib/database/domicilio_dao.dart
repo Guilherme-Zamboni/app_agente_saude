@@ -3,6 +3,15 @@ import '../models/domicilio.dart';
 import 'database_helper.dart';
 import 'familia_dao.dart';
 
+/// Rua e bairro já usados na microárea, para sugerir no cadastro.
+class SugestaoEndereco {
+  final String rua;
+  final String bairro;
+  final int total;
+
+  SugestaoEndereco(this.rua, this.bairro, this.total);
+}
+
 class DomicilioDao {
   final dbHelper = DatabaseHelper.instance;
 
@@ -103,6 +112,28 @@ class DomicilioDao {
         )
     ''', [territorioId]);
     return resultado.map((r) => r['id'] as String).toSet();
+  }
+
+  /// Combinações de rua e bairro já cadastradas, das mais usadas
+  /// para as menos usadas.
+  Future<List<SugestaoEndereco>> sugestoesDeEndereco(
+      String territorioId) async {
+    final db = await dbHelper.database;
+    final linhas = await db.rawQuery('''
+      SELECT rua, bairro, COUNT(*) AS total
+      FROM domicilio
+      WHERE territorio_id = ? AND ativo = 1 AND TRIM(rua) <> ''
+      GROUP BY rua, bairro
+      ORDER BY total DESC
+    ''', [territorioId]);
+
+    return linhas
+        .map((l) => SugestaoEndereco(
+              l['rua'] as String,
+              (l['bairro'] as String?) ?? '',
+              (l['total'] as int?) ?? 0,
+            ))
+        .toList();
   }
 
   Future<List<Domicilio>> buscarPorEndereco({

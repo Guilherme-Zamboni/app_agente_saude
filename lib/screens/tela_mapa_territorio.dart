@@ -320,6 +320,68 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
     );
   }
 
+  /// Lista as casas que não têm posição no mapa (e por isso não têm pino),
+  /// para o agente marcar a localização ou excluir.
+  void _abrirSemLocalizacao(List<Domicilio> lista, _DadosMapa dados) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+                child: Text('Casas sem localização',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  'Estas casas não aparecem no mapa. Toque em uma para marcar '
+                  'a posição ou excluir.',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final d in lista)
+                      ListTile(
+                        leading: Icon(Icons.location_off_outlined,
+                            color: Colors.orange[800]),
+                        title: Text('${d.rua}, ${d.numero}'),
+                        subtitle: Text(d.bairro),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _abrirMenuCasa(
+                            d,
+                            dados.ultimasVisitas[d.id],
+                            dados.naoCadastrados.contains(d.id),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _abrirNovoDomicilio() async {
     await Navigator.push(
       context,
@@ -366,6 +428,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
           posYInicial: domicilio.posY,
           imagemMapa: widget.imagemMapa,
           proporcaoMapa: widget.proporcaoMapa,
+          territorioId: widget.territorioId,
+          domicilioIgnorado: domicilio.id,
         ),
       ),
     );
@@ -421,6 +485,7 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
 
   void _abrirMenuCasa(Domicilio d, Visita? ultima, bool naoCadastrada) {
     final emDia = _estaEmDia(ultima);
+    final semPosicao = d.posX == null || d.posY == null;
     final cor = ultima == null || !emDia
         ? Colors.orange.shade800
         : corResultado(ultima.resultado);
@@ -514,7 +579,9 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             ),
             ListTile(
               leading: const Icon(Icons.pin_drop_outlined),
-              title: const Text('Mover posição no mapa'),
+              title: Text(semPosicao
+                  ? 'Marcar posição no mapa'
+                  : 'Mover posição no mapa'),
               onTap: () {
                 Navigator.pop(context);
                 _moverNoMapa(d);
@@ -617,6 +684,8 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
           final todos = dados.domicilios;
 
           final visiveis = todos.where((d) => _passaNoFiltro(d, dados)).toList();
+          final semPosicao =
+              todos.where((d) => d.posX == null || d.posY == null).toList();
           final pendentes = todos
               .where((d) => !_estaEmDia(dados.ultimasVisitas[d.id]))
               .length;
@@ -682,6 +751,37 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
                     ],
                   ),
                 ),
+                if (semPosicao.isNotEmpty)
+                  Material(
+                    color: const Color(0xFFFFF3E0),
+                    child: InkWell(
+                      onTap: () => _abrirSemLocalizacao(semPosicao, dados),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.location_off_outlined,
+                                size: 20, color: Colors.orange[800]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                semPosicao.length == 1
+                                    ? '1 casa sem localização no mapa'
+                                    : '${semPosicao.length} casas sem localização no mapa',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                            Text('Resolver',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange[900])),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Stack(
                     children: [

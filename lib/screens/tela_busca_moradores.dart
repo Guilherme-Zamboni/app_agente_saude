@@ -67,41 +67,13 @@ class _TelaBuscaMoradoresState extends State<TelaBuscaMoradores> {
       _jaBuscou = true;
     });
 
-    List<Morador> resultado;
-
-    if (_temFiltroPorEndereco) {
-      resultado = await _moradorDao.buscarPorEndereco(
-        rua: _ruaController.text.trim().isEmpty ? null : _ruaController.text.trim(),
-        numero: _numeroController.text.trim().isEmpty
-            ? null
-            : _numeroController.text.trim(),
-      );
-
-      if (_temFiltroPorDados) {
-        final nome = _nomeController.text.trim().toLowerCase();
-        final nomeDaMae = _nomeDaMaeController.text.trim().toLowerCase();
-        resultado = resultado.where((m) {
-          final bateNome = nome.isEmpty || m.nome.toLowerCase().contains(nome);
-          final bateMae = nomeDaMae.isEmpty ||
-              m.nomeDaMae.toLowerCase().contains(nomeDaMae);
-          final bateData = _dataNascimento == null ||
-              m.dataNascimento.year == _dataNascimento!.year &&
-                  m.dataNascimento.month == _dataNascimento!.month &&
-                  m.dataNascimento.day == _dataNascimento!.day;
-          return bateNome && bateMae && bateData;
-        }).toList();
-      }
-    } else {
-      resultado = await _moradorDao.buscar(
-        nome: _nomeController.text.trim().isEmpty
-            ? null
-            : _nomeController.text.trim(),
-        nomeDaMae: _nomeDaMaeController.text.trim().isEmpty
-            ? null
-            : _nomeDaMaeController.text.trim(),
-        dataNascimento: _dataNascimento,
-      );
-    }
+    final resultado = await _moradorDao.buscar(
+      nome: _nomeController.text,
+      nomeDaMae: _nomeDaMaeController.text,
+      dataNascimento: _dataNascimento,
+      rua: _ruaController.text,
+      numero: _numeroController.text,
+    );
 
     if (!mounted) return;
     setState(() {

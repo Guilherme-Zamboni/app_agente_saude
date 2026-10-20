@@ -1,5 +1,6 @@
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../models/morador.dart';
+import '../utils/texto.dart';
 import 'database_helper.dart';
 
 class MoradorDao {
@@ -157,83 +158,86 @@ class MoradorDao {
     return mapa;
   }
 
-  String _normalizar(String texto) => texto.trim().toLowerCase();
-
+  /// Verifica se já existe morador com o mesmo nome, nome da mãe e
+  /// nascimento. Ignora maiúsculas e acentos.
   Future<bool> verificarDuplicidade({
     required String nome,
     required String nomeDaMae,
     required DateTime dataNascimento,
   }) async {
     final db = await dbHelper.database;
-    final resultado = await db.query(
+
+    // compara a data pelos 10 primeiros caracteres (AAAA-MM-DD)
+    final dia = dataNascimento.toIso8601String().substring(0, 10);
+
+    final candidatos = await db.query(
       'morador',
-      where:
-          'LOWER(TRIM(nome)) = ? AND LOWER(TRIM(nome_da_mae)) = ? AND data_nascimento = ? AND ativo = 1',
-      whereArgs: [
-        _normalizar(nome),
-        _normalizar(nomeDaMae),
-        dataNascimento.toIso8601String(),
-      ],
+      columns: ['nome', 'nome_da_mae'],
+      where: 'ativo = 1 AND substr(data_nascimento, 1, 10) = ?',
+      whereArgs: [dia],
     );
-    return resultado.isNotEmpty;
+
+    final n = normalizar(nome);
+    final m = normalizar(nomeDaMae);
+
+    return candidatos.any((c) =>
+        normalizar(c['nome'] as String) == n &&
+        normalizar(c['nome_da_mae'] as String) == m);
   }
 
+  /// Busca por qualquer combinação de nome, mãe, nascimento, rua e número.
+  /// Ignora maiúsculas e acentos.
   Future<List<Morador>> buscar({
     String? nome,
     String? nomeDaMae,
     DateTime? dataNascimento,
+    String? rua,
+    String? numero,
   }) async {
     final db = await dbHelper.database;
-    final condicoes = <String>['ativo = 1'];
-    final valores = <dynamic>[];
 
-    if (nome != null && nome.trim().isNotEmpty) {
-      condicoes.add('nome LIKE ?');
-      valores.add('%$nome%');
-    }
-    if (nomeDaMae != null && nomeDaMae.trim().isNotEmpty) {
-      condicoes.add('nome_da_mae LIKE ?');
-      valores.add('%$nomeDaMae%');
-    }
-    if (dataNascimento != null) {
-      condicoes.add('data_nascimento = ?');
-      valores.add(dataNascimento.toIso8601String());
-    }
+    final linhas = await db.rawQuery('''
+      SELECT m.*, d.rua AS dom_rua, d.numero AS dom_numero
+      FROM morador m
+      INNER JOIN familia f ON m.familia_id = f.id AND f.ativo = 1
+      INNER JOIN domicilio d ON f.domicilio_id = d.id AND d.ativo = 1
+      WHERE m.ativo = 1
+    ''');
 
-    final resultado = await db.query(
-      'morador',
-      where: condicoes.join(' AND '),
-      whereArgs: valores,
-    );
-    return resultado.map((m) => Morador.fromMap(m)).toList();
+    final qNome = normalizar(nome ?? '');
+    final qMae = normalizar(nomeDaMae ?? '');
+    final qRua = normalizar(rua ?? '');
+    final qNumero = normalizar(numero ?? '');
+
+    bool contem(Object? campo, String busca) =>
+        busca.isEmpty || normalizar((campo as String?) ?? '').contains(busca);
+
+    final resultado = linhas.where((l) {
+      if (!contem(l['nome'], qNome)) return false;
+      if (!contem(l['nome_da_mae'], qMae)) return false;
+      if (!contem(l['dom_rua'], qRua)) return false;
+      if (!contem(l['dom_numero'], qNumero)) return false;
+
+      if (dataNascimento != null) {
+        final nasc = DateTime.parse(l['data_nascimento'] as String);
+        if (nasc.year != dataNascimento.year ||
+            nasc.month != dataNascimento.month ||
+            nasc.day != dataNascimento.day) {
+          return false;
+        }
+      }
+      return true;
+    }).map((l) => Morador.fromMap(l)).toList();
+
+    resultado.sort((a, b) => normalizar(a.nome).compareTo(normalizar(b.nome)));
+    return resultado;
   }
 
   Future<List<Morador>> buscarPorEndereco({
     String? rua,
     String? numero,
-  }) async {
-    final db = await dbHelper.database;
-    final condicoes = <String>['m.ativo = 1', 'f.ativo = 1', 'd.ativo = 1'];
-    final valores = <dynamic>[];
-
-    if (rua != null && rua.trim().isNotEmpty) {
-      condicoes.add('d.rua LIKE ?');
-      valores.add('%$rua%');
-    }
-    if (numero != null && numero.trim().isNotEmpty) {
-      condicoes.add('d.numero LIKE ?');
-      valores.add('%$numero%');
-    }
-
-    final resultado = await db.rawQuery('''
-      SELECT m.* FROM morador m
-      INNER JOIN familia f ON m.familia_id = f.id
-      INNER JOIN domicilio d ON f.domicilio_id = d.id
-      WHERE ${condicoes.join(' AND ')}
-    ''', valores);
-
-    return resultado.map((m) => Morador.fromMap(m)).toList();
-  }
+  }) =>
+      buscar(rua: rua, numero: numero);
 
   // ---------- ESTATÍSTICAS ----------
 

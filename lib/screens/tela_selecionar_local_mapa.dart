@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../config/mapa_config.dart';
+import '../database/domicilio_dao.dart';
+import '../models/domicilio.dart';
 import '../widgets/mapa_fundo.dart';
+
+const Color _corReferencia = Color(0xFF78909C);
 
 class TelaSelecionarLocalMapa extends StatefulWidget {
   final double? posXInicial;
@@ -8,12 +12,24 @@ class TelaSelecionarLocalMapa extends StatefulWidget {
   final String? imagemMapa;
   final double? proporcaoMapa;
 
+  /// Microárea cujas casas já cadastradas aparecem como referência.
+  final String? territorioId;
+
+  /// Casa que está sendo movida (não aparece duplicada como referência).
+  final String? domicilioIgnorado;
+
+  /// Endereço da casa nova, mostrado no aviso do topo.
+  final String? enderecoNovaCasa;
+
   const TelaSelecionarLocalMapa({
     super.key,
     this.posXInicial,
     this.posYInicial,
     this.imagemMapa,
     this.proporcaoMapa,
+    this.territorioId,
+    this.domicilioIgnorado,
+    this.enderecoNovaCasa,
   });
 
   @override
@@ -27,6 +43,8 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
   double _escalaAtual = 1.0;
 
   Offset? _posicaoSelecionada; // proporção 0.0 a 1.0
+  List<Domicilio> _outrasCasas = [];
+  bool _mostrarOutras = true;
 
   double get _proporcaoMapa => widget.proporcaoMapa ?? (1200 / 900);
 
@@ -42,12 +60,30 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
         setState(() => _escalaAtual = escala);
       }
     });
+    _carregarOutrasCasas();
   }
 
   @override
   void dispose() {
     _controladorZoom.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarOutrasCasas() async {
+    final territorio = widget.territorioId;
+    if (territorio == null) return;
+
+    final lista = await DomicilioDao().listarPorTerritorio(territorio);
+    if (!mounted) return;
+
+    setState(() {
+      _outrasCasas = lista
+          .where((d) =>
+              d.id != widget.domicilioIgnorado &&
+              d.posX != null &&
+              d.posY != null)
+          .toList();
+    });
   }
 
   void _ajustarZoom(double fator) {
@@ -86,9 +122,52 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
     Navigator.pop(context, _posicaoSelecionada);
   }
 
+  /// Pino cinza de referência. Não captura toques, para que tocar perto
+  /// de uma casa existente continue marcando a posição da casa nova.
+  Widget _casaReferencia(Domicilio d, double largura, double altura) {
+    return Positioned(
+      left: d.posX! * largura,
+      top: d.posY! * altura,
+      child: IgnorePointer(
+        child: FractionalTranslation(
+          translation: const Offset(-0.5, -1.0),
+          child: Transform.scale(
+            scale: escalaDoPino(_escalaAtual),
+            alignment: Alignment.bottomCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_on,
+                    color: _corReferencia, size: tamanhoPino),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 3, vertical: 0.5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 1),
+                    ],
+                  ),
+                  child: Text(
+                    d.numero,
+                    style: const TextStyle(
+                        fontSize: fontePinoNumero,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final temPosicao = _posicaoSelecionada != null;
+    final mostrandoReferencias = _mostrarOutras && _outrasCasas.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Indique a localização')),
@@ -138,6 +217,9 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
                             largura: largura,
                             altura: altura,
                           ),
+                          if (mostrandoReferencias)
+                            for (final d in _outrasCasas)
+                              _casaReferencia(d, largura, altura),
                           if (_posicaoSelecionada != null)
                             Positioned(
                               left: _posicaoSelecionada!.dx * largura,
@@ -170,10 +252,26 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
                 color: Colors.white.withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
-                'Toque no local do mapa onde fica esta casa.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.enderecoNovaCasa != null
+                        ? 'Toque no mapa onde fica ${widget.enderecoNovaCasa}.'
+                        : 'Toque no local do mapa onde fica esta casa.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                  if (mostrandoReferencias)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text(
+                        'As casas em cinza já estão cadastradas.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -182,6 +280,22 @@ class _TelaSelecionarLocalMapaState extends State<TelaSelecionarLocalMapa> {
             bottom: 16,
             child: Column(
               children: [
+                if (_outrasCasas.isNotEmpty) ...[
+                  FloatingActionButton.small(
+                    heroTag: 'alternarCasas',
+                    backgroundColor: Colors.white,
+                    tooltip: _mostrarOutras
+                        ? 'Ocultar casas cadastradas'
+                        : 'Mostrar casas cadastradas',
+                    onPressed: () =>
+                        setState(() => _mostrarOutras = !_mostrarOutras),
+                    child: Icon(
+                      _mostrarOutras ? Icons.visibility : Icons.visibility_off,
+                      color: Colors.teal,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 FloatingActionButton.small(
                   heroTag: 'zoomInSelecao',
                   backgroundColor: Colors.white,

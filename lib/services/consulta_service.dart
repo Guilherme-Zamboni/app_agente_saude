@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/domicilio.dart';
 import '../models/familia.dart';
 import '../models/morador.dart';
+import '../utils/texto.dart';
 
 /// Consultas feitas diretamente no servidor, usadas pelo coordenador
 /// (que não tem os dados das áreas no banco local).
@@ -161,6 +162,7 @@ class ConsultaService {
   }
 
   /// Busca de moradores dentro de um território específico.
+  /// Ignora maiúsculas e acentos (a comparação é feita no app).
   static Future<List<Morador>> buscarMoradores({
     required String territorioId,
     String? nome,
@@ -169,23 +171,22 @@ class ConsultaService {
     String? rua,
     String? numero,
   }) async {
-    var consultaDomicilios = _cliente
+    final domicilios = await _cliente
         .from('domicilio')
-        .select('id')
+        .select('id, rua, numero')
         .eq('territorio_id', territorioId)
         .eq('ativo', true);
 
-    if (rua != null && rua.trim().isNotEmpty) {
-      consultaDomicilios = consultaDomicilios.ilike('rua', '%${rua.trim()}%');
-    }
-    if (numero != null && numero.trim().isNotEmpty) {
-      consultaDomicilios =
-          consultaDomicilios.ilike('numero', '%${numero.trim()}%');
-    }
+    final qRua = normalizar(rua ?? '');
+    final qNumero = normalizar(numero ?? '');
 
-    final domicilios = await consultaDomicilios;
-    final idsDomicilios =
-        domicilios.map<String>((d) => d['id'] as String).toList();
+    final idsDomicilios = domicilios
+        .where((d) =>
+            (qRua.isEmpty || normalizar(d['rua'] as String).contains(qRua)) &&
+            (qNumero.isEmpty ||
+                normalizar(d['numero'] as String).contains(qNumero)))
+        .map<String>((d) => d['id'] as String)
+        .toList();
     if (idsDomicilios.isEmpty) return [];
 
     final familias = await _cliente
@@ -203,12 +204,6 @@ class ConsultaService {
         .inFilter('familia_id', idsFamilias)
         .eq('ativo', true);
 
-    if (nome != null && nome.trim().isNotEmpty) {
-      consulta = consulta.ilike('nome', '%${nome.trim()}%');
-    }
-    if (nomeDaMae != null && nomeDaMae.trim().isNotEmpty) {
-      consulta = consulta.ilike('nome_da_mae', '%${nomeDaMae.trim()}%');
-    }
     if (dataNascimento != null) {
       consulta = consulta.eq(
         'data_nascimento',
@@ -217,7 +212,20 @@ class ConsultaService {
     }
 
     final resultado = await consulta;
-    return resultado.map<Morador>((m) => Morador.fromMap(m)).toList();
+
+    final qNome = normalizar(nome ?? '');
+    final qMae = normalizar(nomeDaMae ?? '');
+
+    final lista = resultado
+        .where((m) =>
+            (qNome.isEmpty || normalizar(m['nome'] as String).contains(qNome)) &&
+            (qMae.isEmpty ||
+                normalizar(m['nome_da_mae'] as String).contains(qMae)))
+        .map<Morador>((m) => Morador.fromMap(m))
+        .toList();
+
+    lista.sort((a, b) => normalizar(a.nome).compareTo(normalizar(b.nome)));
+    return lista;
   }
 
   /// Ficha completa de um morador, incluindo o endereço onde mora.

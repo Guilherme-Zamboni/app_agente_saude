@@ -4,6 +4,7 @@ import '../models/domicilio.dart';
 import '../models/visita.dart';
 import '../database/domicilio_dao.dart';
 import '../database/visita_dao.dart';
+import '../utils/texto.dart';
 import '../widgets/dialogo_visita.dart';
 import 'tela_cadastro_familia.dart';
 import 'tela_selecionar_local_mapa.dart';
@@ -37,6 +38,11 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
 
   bool _salvando = false;
 
+  // sugestões tiradas das casas já cadastradas na microárea
+  List<String> _ruasSugeridas = [];
+  List<String> _bairrosSugeridos = [];
+  final Map<String, String> _bairroDaRua = {}; // rua normalizada -> bairro
+
   bool get _editando => widget.domicilioParaEditar != null;
 
   @override
@@ -49,6 +55,43 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
       _bairroController.text = d.bairro;
       _complementoController.text = d.complemento ?? '';
     }
+    _carregarSugestoes();
+  }
+
+  Future<void> _carregarSugestoes() async {
+    final lista = await _domicilioDao.sugestoesDeEndereco(widget.territorioId);
+
+    // a lista vem das mais usadas para as menos usadas; a primeira grafia
+    // de cada rua/bairro (ignorando acento e maiúscula) é a que prevalece
+    final ruas = <String, String>{};
+    final bairros = <String, String>{};
+    final bairroDaRua = <String, String>{};
+
+    for (final s in lista) {
+      final rua = s.rua.trim();
+      final bairro = s.bairro.trim();
+      final chaveRua = normalizar(rua);
+      final chaveBairro = normalizar(bairro);
+
+      if (chaveRua.isNotEmpty) {
+        ruas.putIfAbsent(chaveRua, () => rua);
+        if (chaveBairro.isNotEmpty) {
+          bairroDaRua.putIfAbsent(chaveRua, () => bairro);
+        }
+      }
+      if (chaveBairro.isNotEmpty) {
+        bairros.putIfAbsent(chaveBairro, () => bairro);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _ruasSugeridas = ruas.values.toList();
+      _bairrosSugeridos = bairros.values.toList();
+      _bairroDaRua
+        ..clear()
+        ..addAll(bairroDaRua);
+    });
   }
 
   String? get _complemento => _complementoController.text.trim().isEmpty
@@ -82,6 +125,38 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
     }
 
     // --- Modo cadastro ---
+    // 1) A localização vem primeiro: a casa só é salva se ela for marcada.
+    //    Assim não sobra casa sem posição, que não aparece no mapa.
+    final posicao = await Navigator.push<Offset?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaSelecionarLocalMapa(
+          imagemMapa: widget.imagemMapa,
+          proporcaoMapa: widget.proporcaoMapa,
+          territorioId: widget.territorioId,
+          enderecoNovaCasa:
+              '${_ruaController.text.trim()}, ${_numeroController.text.trim()}',
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (posicao == null) {
+      // volta ao formulário com os dados preenchidos, nada foi salvo
+      setState(() => _salvando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A casa não foi salva. Marque a localização no mapa para '
+            'concluir o cadastro.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     final domicilio = Domicilio(
       id: const Uuid().v4(),
       territorioId: widget.territorioId,
@@ -89,26 +164,11 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
       numero: _numeroController.text.trim(),
       bairro: _bairroController.text.trim(),
       complemento: _complemento,
+      posX: posicao.dx,
+      posY: posicao.dy,
     );
 
     await _domicilioDao.inserir(domicilio);
-
-    if (!mounted) return;
-
-    // 1) marca a posição da casa no mapa
-    final posicao = await Navigator.push<Offset?>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TelaSelecionarLocalMapa(
-          imagemMapa: widget.imagemMapa,
-          proporcaoMapa: widget.proporcaoMapa,
-        ),
-      ),
-    );
-
-    if (posicao != null) {
-      await _domicilioDao.atualizarPosicao(domicilio.id, posicao.dx, posicao.dy);
-    }
 
     if (!mounted) return;
     setState(() => _salvando = false);
@@ -258,12 +318,19 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
           key: _formKey,
           child: ListView(
             children: [
-              TextFormField(
+              _CampoComSugestoes(
                 controller: _ruaController,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(labelText: 'Rua'),
+                rotulo: 'Rua',
+                opcoes: _ruasSugeridas,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Informe a rua' : null,
+                aoSelecionar: (rua) {
+                  // preenche o bairro só se ainda estiver vazio
+                  if (_bairroController.text.trim().isEmpty) {
+                    final bairro = _bairroDaRua[normalizar(rua)];
+                    if (bairro != null) _bairroController.text = bairro;
+                  }
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -275,10 +342,10 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
                     (v == null || v.trim().isEmpty) ? 'Informe o número' : null,
               ),
               const SizedBox(height: 16),
-              TextFormField(
+              _CampoComSugestoes(
                 controller: _bairroController,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(labelText: 'Bairro'),
+                rotulo: 'Bairro',
+                opcoes: _bairrosSugeridos,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Informe o bairro' : null,
               ),
@@ -304,6 +371,100 @@ class _TelaCadastroDomicilioState extends State<TelaCadastroDomicilio> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Campo de texto que oferece uma lista de opções já usadas, filtrada
+/// enquanto se digita. A busca ignora maiúsculas e acentos.
+class _CampoComSugestoes extends StatefulWidget {
+  final TextEditingController controller;
+  final String rotulo;
+  final List<String> opcoes;
+  final String? Function(String?)? validator;
+  final ValueChanged<String>? aoSelecionar;
+
+  const _CampoComSugestoes({
+    required this.controller,
+    required this.rotulo,
+    required this.opcoes,
+    this.validator,
+    this.aoSelecionar,
+  });
+
+  @override
+  State<_CampoComSugestoes> createState() => _CampoComSugestoesState();
+}
+
+class _CampoComSugestoesState extends State<_CampoComSugestoes> {
+  final _foco = FocusNode();
+
+  @override
+  void dispose() {
+    _foco.dispose();
+    super.dispose();
+  }
+
+  Iterable<String> _filtrar(TextEditingValue valor) {
+    final busca = normalizar(valor.text);
+    final lista = busca.isEmpty
+        ? widget.opcoes
+        : widget.opcoes.where((o) => normalizar(o).contains(busca));
+    return lista.take(8);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, restricoes) => RawAutocomplete<String>(
+        // a chave refaz o campo quando a lista de sugestões termina de
+        // carregar, senão ele continuaria com a lista vazia do início
+        key: ValueKey(widget.opcoes.length),
+        textEditingController: widget.controller,
+        focusNode: _foco,
+        optionsBuilder: _filtrar,
+        onSelected: (valor) => widget.aoSelecionar?.call(valor),
+        fieldViewBuilder: (context, controller, foco, aoEnviar) =>
+            TextFormField(
+          controller: controller,
+          focusNode: foco,
+          textCapitalization: TextCapitalization.words,
+          style: const TextStyle(fontSize: 18),
+          decoration: InputDecoration(
+            labelText: widget.rotulo,
+            suffixIcon: widget.opcoes.isEmpty
+                ? null
+                : const Icon(Icons.arrow_drop_down),
+          ),
+          validator: widget.validator,
+        ),
+        optionsViewBuilder: (context, aoSelecionar, opcoes) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: 220,
+                maxWidth: restricoes.maxWidth,
+              ),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: opcoes.length,
+                itemBuilder: (context, indice) {
+                  final opcao = opcoes.elementAt(indice);
+                  return ListTile(
+                    dense: true,
+                    title: Text(opcao, style: const TextStyle(fontSize: 16)),
+                    onTap: () => aoSelecionar(opcao),
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
