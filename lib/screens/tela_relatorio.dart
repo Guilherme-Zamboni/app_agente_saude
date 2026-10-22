@@ -1,7 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../database/relatorio_dao.dart';
+import '../services/relatorio_arquivo.dart';
 import '../services/relatorio_service.dart';
 
 class TelaRelatorio extends StatefulWidget {
@@ -92,12 +91,12 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
     }
   }
 
-  Future<void> _salvarNoCelular() async {
+  Future<void> _salvarOuImprimir() async {
     if (_previa == null) return;
     setState(() => _gerando = true);
 
     try {
-      final bytes = await RelatorioService.montar(
+      await RelatorioArquivo.salvarOuImprimir(
         dados: _previa!,
         nomeTerritorio: widget.nomeTerritorio,
         nomeAgente: widget.nomeAgente,
@@ -105,19 +104,8 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
         mes: _mes,
         incluirNomes: _incluirNomes,
       );
-
-      final pasta = await getApplicationDocumentsDirectory();
-      final nome = RelatorioService.nomeArquivo(
-        nomeTerritorio: widget.nomeTerritorio,
-        ano: _ano,
-        mes: _mes,
-      );
-      final arquivo = File('${pasta.path}/$nome');
-      await arquivo.writeAsBytes(bytes);
-
-      _avisar('Relatório salvo no aplicativo como $nome');
     } catch (e) {
-      _avisar('Não foi possível salvar: $e');
+      _avisar('Não foi possível abrir a tela de impressão: $e');
     } finally {
       if (mounted) setState(() => _gerando = false);
     }
@@ -146,16 +134,17 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
                 child: SizedBox(
                   height: 54,
                   child: OutlinedButton.icon(
-                    onPressed:
-                        (_previa == null || _gerando) ? null : _salvarNoCelular,
+                    onPressed: (_previa == null || _gerando)
+                        ? null
+                        : _salvarOuImprimir,
                     icon: const Icon(Icons.save_alt),
-                    label: const Text('Salvar'),
+                    label: const Text('Salvar PDF',
+                        style: TextStyle(fontSize: 16)),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                flex: 2,
                 child: SizedBox(
                   height: 54,
                   child: ElevatedButton.icon(
@@ -167,7 +156,7 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.share),
-                    label: Text(_gerando ? 'Gerando...' : 'Compartilhar PDF',
+                    label: Text(_gerando ? 'Gerando...' : 'Compartilhar',
                         style: const TextStyle(fontSize: 16)),
                   ),
                 ),
@@ -302,6 +291,13 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
               'detalhada das visitas do mês.',
               style: TextStyle(fontSize: 13, color: Colors.black54),
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Para guardar no aparelho: toque em "Salvar PDF", escolha '
+              '"Salvar como PDF" no alto da tela, toque no botão redondo de '
+              'PDF e escolha a pasta (por exemplo, Downloads).',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+            ),
           ],
         ],
       ),
@@ -341,8 +337,9 @@ class _TelaRelatorioState extends State<TelaRelatorio> {
             child: Text(texto,
                 style: TextStyle(
                     fontSize: 13,
-                    color:
-                        diferenca >= 0 ? Colors.green[800] : Colors.orange[900])),
+                    color: diferenca >= 0
+                        ? Colors.green[800]
+                        : Colors.orange[900])),
           ),
         ],
       ),
