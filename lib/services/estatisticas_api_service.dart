@@ -6,9 +6,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 ///   estatisticas_territorio   { p_territorio_id }
 ///   estatisticas_consolidadas { }
 ///   estatisticas_visitas      { p_inicio, p_fim, p_territorio_id? }
+///   estatisticas_todas_areas  { }
 ///
-/// As funções rodam com as permissões de quem chamou, então um agente
-/// só recebe os dados da própria microárea mesmo chamando o consolidado.
+/// As três primeiras rodam com as permissões de quem chamou, então um
+/// agente só recebe os dados da própria microárea, mesmo chamando o
+/// consolidado.
+///
+/// A última (estatisticas_todas_areas) é a exceção deliberada: devolve apenas
+/// números somados de todas as microáreas, sem nomes, endereços nem
+/// identificadores, e pode ser chamada por qualquer usuário autenticado.
 class EstatisticasApiService {
   static final _cliente = Supabase.instance.client;
 
@@ -22,6 +28,12 @@ class EstatisticasApiService {
 
   static Future<Map<String, dynamic>> consolidadas() async {
     final resposta = await _cliente.rpc('estatisticas_consolidadas');
+    return Map<String, dynamic>.from(resposta as Map);
+  }
+
+  /// Números somados de todas as microáreas (sem dados identificáveis).
+  static Future<Map<String, dynamic>> todasAsAreas() async {
+    final resposta = await _cliente.rpc('estatisticas_todas_areas');
     return Map<String, dynamic>.from(resposta as Map);
   }
 

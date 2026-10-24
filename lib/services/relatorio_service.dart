@@ -45,7 +45,7 @@ class RelatorioService {
             : pw.Container(
                 alignment: pw.Alignment.centerRight,
                 margin: const pw.EdgeInsets.only(bottom: 12),
-                child: pw.Text('$nomeTerritorio • $mesNome/$ano',
+                child: pw.Text('$nomeTerritorio · $mesNome/$ano',
                     style: const pw.TextStyle(fontSize: 9)),
               ),
         footer: (context) => pw.Container(
@@ -354,7 +354,7 @@ class RelatorioService {
         pw.SizedBox(height: 6),
         pw.Text('${e.key} (${e.value.length})',
             style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-        pw.Text(e.value.join(' • '), style: const pw.TextStyle(fontSize: 10)),
+        pw.Text(e.value.join(' · '), style: const pw.TextStyle(fontSize: 10)),
       ],
     ];
   }
@@ -391,6 +391,10 @@ class RelatorioService {
 
   static pw.Widget _tabela(List<List<String>> linhas) =>
       pw.TableHelper.fromTextArray(
+        // sem cabeçalho: todas as linhas são dados. Sem isto, a primeira
+        // linha vira cabeçalho (letra maior) e é repetida no topo da
+        // página seguinte quando a tabela quebra de página.
+        headerCount: 0,
         cellStyle: const pw.TextStyle(fontSize: 10),
         cellAlignments: {
           0: pw.Alignment.centerLeft,

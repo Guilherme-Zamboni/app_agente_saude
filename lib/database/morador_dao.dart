@@ -240,6 +240,11 @@ class MoradorDao {
       buscar(rua: rua, numero: numero);
 
   // ---------- ESTATÍSTICAS ----------
+  //
+  // Todas as contagens consideram apenas moradores ativos, de famílias
+  // ativas, em domicílios ativos. Quando [territorioId] é informado, contam
+  // somente a microárea indicada; sem ele, contam tudo o que está gravado
+  // no aparelho.
 
   /// Data exata de N anos atrás, no mesmo formato gravado no banco.
   String _dataHaAnos(int anos) {
@@ -247,56 +252,65 @@ class MoradorDao {
     return DateTime(hoje.year - anos, hoje.month, hoje.day).toIso8601String();
   }
 
-  Future<int> contarTotal() async {
+  Future<int> _contar({
+    String condicao = '',
+    List<Object?> argumentos = const [],
+    String? territorioId,
+  }) async {
     final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE ativo = 1',
-    );
+
+    final filtros = <String>['m.ativo = 1'];
+    final valores = <Object?>[];
+
+    if (territorioId != null) {
+      filtros.add('d.territorio_id = ?');
+      valores.add(territorioId);
+    }
+    if (condicao.isNotEmpty) {
+      filtros.add(condicao);
+      valores.addAll(argumentos);
+    }
+
+    final resultado = await db.rawQuery('''
+      SELECT COUNT(*) AS total
+      FROM morador m
+      INNER JOIN familia f ON f.id = m.familia_id AND f.ativo = 1
+      INNER JOIN domicilio d ON d.id = f.domicilio_id AND d.ativo = 1
+      WHERE ${filtros.join(' AND ')}
+    ''', valores);
+
     return Sqflite.firstIntValue(resultado) ?? 0;
   }
 
-  Future<int> contarPorComorbidade(String comorbidade) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE comorbidades LIKE ? AND ativo = 1',
-      ['%$comorbidade%'],
-    );
-    return Sqflite.firstIntValue(resultado) ?? 0;
-  }
+  Future<int> contarTotal({String? territorioId}) =>
+      _contar(territorioId: territorioId);
 
-  Future<int> contarGestantes() async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE gestante = 1 AND ativo = 1',
-    );
-    return Sqflite.firstIntValue(resultado) ?? 0;
-  }
+  Future<int> contarPorComorbidade(String comorbidade,
+          {String? territorioId}) =>
+      _contar(
+        condicao: 'm.comorbidades LIKE ?',
+        argumentos: ['%$comorbidade%'],
+        territorioId: territorioId,
+      );
 
-  Future<int> contarAcamados() async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE acamado = 1 AND ativo = 1',
-    );
-    return Sqflite.firstIntValue(resultado) ?? 0;
-  }
+  Future<int> contarGestantes({String? territorioId}) =>
+      _contar(condicao: 'm.gestante = 1', territorioId: territorioId);
+
+  Future<int> contarAcamados({String? territorioId}) =>
+      _contar(condicao: 'm.acamado = 1', territorioId: territorioId);
 
   /// Crianças menores de 2 anos (quem completa 2 anos hoje já não conta).
-  Future<int> contarCriancasMenores2Anos() async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE data_nascimento > ? AND ativo = 1',
-      [_dataHaAnos(2)],
-    );
-    return Sqflite.firstIntValue(resultado) ?? 0;
-  }
+  Future<int> contarCriancasMenores2Anos({String? territorioId}) => _contar(
+        condicao: 'm.data_nascimento > ?',
+        argumentos: [_dataHaAnos(2)],
+        territorioId: territorioId,
+      );
 
   /// Idosos com 60 anos ou mais.
-  Future<int> contarIdosos({int idadeMinima = 60}) async {
-    final db = await dbHelper.database;
-    final resultado = await db.rawQuery(
-      'SELECT COUNT(*) as total FROM morador WHERE data_nascimento <= ? AND ativo = 1',
-      [_dataHaAnos(idadeMinima)],
-    );
-    return Sqflite.firstIntValue(resultado) ?? 0;
-  }
+  Future<int> contarIdosos({int idadeMinima = 60, String? territorioId}) =>
+      _contar(
+        condicao: 'm.data_nascimento <= ?',
+        argumentos: [_dataHaAnos(idadeMinima)],
+        territorioId: territorioId,
+      );
 }

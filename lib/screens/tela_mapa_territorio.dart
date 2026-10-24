@@ -640,7 +640,12 @@ class _TelaMapaTerritorioState extends State<TelaMapaTerritorio> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const TelaEstatisticas()),
+                MaterialPageRoute(
+                  builder: (_) => TelaEstatisticas(
+                    territorioId: widget.territorioId,
+                    nomeTerritorio: widget.nomeTerritorio,
+                  ),
+                ),
               );
             },
           ),
