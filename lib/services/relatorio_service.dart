@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../database/relatorio_dao.dart';
 import '../models/visita.dart';
 import '../screens/tela_cadastro_morador.dart' show comorbidadesLabels;
+import '../utils/texto.dart';
 
 const List<String> nomesMeses = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -19,9 +20,13 @@ class RelatorioService {
     required String nomeTerritorio,
     required int ano,
     required int mes,
-  }) =>
-      'relatorio_${nomeTerritorio.replaceAll(RegExp(r'[^\w]'), '_')}'
-      '_${mes.toString().padLeft(2, '0')}_$ano.pdf';
+  }) {
+    // sem acentos nem espaços: "Demonstração" vira "demonstracao"
+    final nome = normalizar(nomeTerritorio)
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return 'relatorio_${nome}_${mes.toString().padLeft(2, '0')}_$ano.pdf';
+  }
 
   /// Monta o PDF e devolve os bytes.
   static Future<List<int>> montar({

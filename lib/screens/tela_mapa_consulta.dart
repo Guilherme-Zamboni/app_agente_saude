@@ -10,6 +10,7 @@ import '../widgets/mapa_fundo.dart';
 import 'tela_busca_consulta.dart';
 import 'tela_ficha_consulta.dart';
 import 'tela_mapa_territorio.dart' show corPendente, corNaoCadastrada;
+import 'tela_cadastro_morador.dart' show comorbidadesLabels;
 
 const int _diasLimiteVisita = 30;
 
@@ -803,7 +804,7 @@ class _CardFamiliaConsulta extends StatelessWidget {
                             '${_idade(m.dataNascimento)} anos'
                             '${m.gestante ? ' • Gestante' : ''}'
                             '${m.acamado ? ' • Acamado' : ''}'
-                            '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
+                            '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.map((c) => comorbidadesLabels[c] ?? c).join(', ')}' : ''}',
                           ),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => Navigator.push(

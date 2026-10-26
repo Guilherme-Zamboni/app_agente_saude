@@ -472,7 +472,7 @@ class _CartaoFamiliaState extends State<_CartaoFamilia> {
                           '$idade anos'
                           '${m.gestante ? ' • Gestante' : ''}'
                           '${m.acamado ? ' • Acamado' : ''}'
-                          '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.join(', ')}' : ''}',
+                          '${m.comorbidades.isNotEmpty ? ' • ${m.comorbidades.map((c) => comorbidadesLabels[c] ?? c).join(', ')}' : ''}',
                         ),
                         onTap: () => _abrirFicha(m),
                         trailing: IconButton(
